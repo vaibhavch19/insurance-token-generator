@@ -1,0 +1,14 @@
+# Packages for Agents and AI
+langgraph
+langchain
+langchain-community
+langchain-openai
+langfuse
+
+# Packages for API
+flask
+flask-cors
+requests
+
+# Miscellaneous Packages
+graphviz
