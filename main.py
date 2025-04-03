@@ -1,4 +1,94 @@
 
+
+# ========== TOOLS ==========
+  
+@tool
+def fetch_policy(policy_number: str) -> Dict:
+    '''Fetch policy based on policy number'''
+    response = requests.post(f'{API_URL}/fetch-policy-number', json={'tests': tests})
+    policy_number = response.json()['policy_number'] if response.status_code == 200 else ''
+    return {'policy_number': policy_number}
+    
+@tool
+def fetch_RSA_details(policy_number: str) -> Dict:
+    '''Fetch if RSA is included in the policy'''
+    response = requests.post(f'{API_URL}/fetch-rsa-details', json={'location': location, 'tests': tests})
+    rsa_details = response.json()['rsa_details'] if response.status_code == 200 else {}
+    return {'rsa_details': rsa_details}
+   
+@tool
+def fetch_user_summary(user_summary: str) -> Dict:
+    '''Fetch user summary of accident with pictures or videos on a FTP link'''
+    response = requests.post(f'{API_URL}/fetch-accident-summary', json={'tests': tests})
+    summary = response.json()['accident_summary'] if response.status_code == 200 else {}
+    return {'accident_summary': summary}
+    
+
+@tool
+def save_ticket_details(name: str, age: int, date: str, slot: str) -> Dict:
+    '''Save ticket details'''
+    return {
+        'name': name,
+        'date':date,
+        'RSA details': True,
+        'user_summary': True,
+        'awaiting_confirmation': True
+    }
+
+@tool
+def raise_ticket(state: State) -> Dict:
+    '''Book an appointment with all collected details'''
+    if not state.get('ticket_created', False):
+        return {'error': 'Ticket not created yet'}
+    if not state.get('awaiting_confirmation', False):
+        return {'error': 'Confirmation not received'}
+    if not state.get('accident_summary', False):
+        return {'error': 'Accident summary not provided'}
+    
+    if not state.get('accident_location', False):
+        return {'error': 'Accident location not provided'}
+    if not state.get('accident_date', False):
+        return {'error': 'Accident date not provided'}
+    if not state.get('accident_time', False):
+        return {'error': 'Accident time not provided'}
+    if not state.get('accident_details', False):
+        return {'error': 'Accident details not provided'}
+    
+    
+    
+    response = requests.post(f'{API_URL}/ticket_raising', json={
+       
+        'policy': state['policy'],
+        'rsa': state['rsa'],
+        'accident_date': state['accident_date'],
+        'accident_time': state['accident_time'],
+        'accident_location': state['accident_location'],
+        'accident_details': state['accident_details'],
+        'towing_service': state['towing_service'],
+        'cab_service': state['cab_service'],
+        'ftp_link': state['ftp_link'],
+        'scene_recreation': state['scene_recreation'],
+        'accident_summary': state['accident_summary'],
+        'ticket_id': state['ticket_id'],
+        'ticket_created': state['ticket_created'],
+        'awaiting_confirmation': state['awaiting_confirmation'],
+
+        
+    })
+    result = response.json() if response.status_code == 200 else {'error': 'Booking failed'}
+    return result
+
+tools = [
+    fetch_policy,
+    fetch_RSA_details, 
+    fetch_user_summary,
+    save_ticket_details,
+    raise_ticket
+]
+
+llm_with_tools = llm.bind_tools(tools)
+
+
 ############################
 def agent_node(state: State) -> Dict:
     messages = state['messages']
@@ -70,4 +160,58 @@ def agent_node(state: State) -> Dict:
     # Invoke LLM with current conversation and state
     response = llm_with_tools.invoke([{'role': 'system', 'content': system_prompt}] + messages)
     return {'messages': [response]}
+
+
+
+def run_conversation():
+    config = {'configurable': {'thread_id': '1'}}
+    
+    print('Starting conversation...')
+    state = graph.invoke({'messages': []}, config)
+    print(f'\nAssistant: {state["messages"][-1].content}')
+    
+    while True:
+        user_input = input('\nYou: ').strip()
+        if user_input.lower() in ['quit', 'exit']:
+            print('\nAssistant: Goodbye!')
+          # Skip empty input
+        if not user_input:
+            print("Input cannot be empty. Please enter a valid message.")
+            continue
+
+
+            break
+        
+        for event in graph.stream(
+            {'messages': [HumanMessage(content=user_input)]},
+            config
+        ):
+            for value in event.values():
+                if 'messages' in value and value['messages']:
+                    message = value['messages'][-1]
+                    if isinstance(message, AIMessage):
+                        if message.content:
+                            print(f'\nAssistant: {message.content}')
+                        elif message.tool_calls:
+                            print('\nAssistant: Processing your request...')
+
+
+# ========== GRAPH ==========
+builder = StateGraph(State)
+builder.add_node('agent', agent_node)
+builder.add_node('tools', ToolNode(tools))
+
+builder.add_edge(START, 'agent')
+builder.add_conditional_edges('agent', tools_condition)
+builder.add_edge('tools', 'agent')
+builder.add_edge('agent', END)
+
+memory = MemorySaver()
+graph = builder.compile(checkpointer=memory)
+
+
+if __name__ == '__main__':
+    run_conversation()
+
+
 
