@@ -1,8 +1,9 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import requests
+import json
 import uvicorn 
-
+from summarizer import summarize_insurance_by_phone
 app = FastAPI()
 
 # Allow frontend to access backend APIs
@@ -27,14 +28,21 @@ async def websocket_endpoint(websocket: WebSocket):
             print(f"Received: {data}")
 
             # Example processing
-            if "policy" in data.lower():
-                response = "Please provide your policy number to fetch details."
+            if data.replace(" ", "").isalnum():  # Allows numbers and letters
+                policy_summary = summarize_insurance_by_phone(data)
+                response = json.dumps(policy_summary)
             else:
-                response = f"Echo: {data}"
+                response = "Please provide a valid phone number or policy number."
 
             await websocket.send_text(response)
     except WebSocketDisconnect:
         connections.remove(websocket)
+
+
+@app.get("/api/policy-summary/{phone_number}")
+async def get_policy_summary(phone_number: str):
+    return summarize_insurance_by_phone(phone_number)
+       
 
 @app.get("/api/policy-summary/{policy_id}")
 async def get_policy_summary(policy_id: str):
