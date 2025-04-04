@@ -12,3 +12,7 @@ requests
 
 # Miscellaneous Packages
 graphviz
+
+
+#streamlit
+streamlit
