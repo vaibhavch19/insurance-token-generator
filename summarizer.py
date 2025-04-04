@@ -1,17 +1,35 @@
 import pdfplumber
+import sqlite3  # or use your specific database module
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import SystemMessage, HumanMessage
+from langchain.sql_database import SQLDatabase
 
-# Load OpenAI LLM via LangChain
-llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="320858c52dcd4d0a87c913604e16d562")
+# Initialize the LLM
+llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="sk-your-key")
 
-# Function to extract text from PDF
+# Connect to SQL database (replace with your URI if not SQLite)
+db = SQLDatabase.from_uri("sqlite:///your_database.db")
+
+# Function to fetch PDF path using phone number
+def get_pdf_path_from_phone(phone_number):
+    # Direct SQL query
+    with sqlite3.connect("your_database.db") as conn:
+        cursor = conn.cursor()
+        query = "SELECT pdf_path FROM insurance_documents WHERE phone_number = ?"
+        cursor.execute(query, (phone_number,))
+        result = cursor.fetchone()
+        if result:
+            return result[0]
+        else:
+            raise ValueError("No document found for the given phone number.")
+
+# Extract text from PDF
 def extract_text_from_pdf(pdf_path):
     with pdfplumber.open(pdf_path) as pdf:
         text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
     return text
 
-# Function to ask LLM for structured extraction
+# Extract insurance summary using LLM
 def extract_insurance_details_llm(text):
     prompt = f"""
     Extract the following details from the given motor insurance policy text and return the result in JSON format:
@@ -38,23 +56,24 @@ def extract_insurance_details_llm(text):
     Motor Insurance Policy Text:
     {text}
     """
-
     messages = [
         SystemMessage(content="You are an expert in document processing and data extraction."),
         HumanMessage(content=prompt)
     ]
-
     response = llm(messages)
     return response.content
 
-# **Main Execution**
-pdf_path = "Vehicle_Insurance_Certificate_in_India.pdf"
+# 🔄 Main Execution Flow
+def summarize_insurance_by_phone(phone_number):
+    try:
+        pdf_path = get_pdf_path_from_phone(phone_number)
+        policy_text = extract_text_from_pdf(pdf_path)
+        summary = extract_insurance_details_llm(policy_text)
+        return summary
+    except Exception as e:
+        return str(e)
 
-# Extract text
-policy_text = extract_text_from_pdf(pdf_path)
+# Example usage:
+phone = input("Enter client phone number: ")
+print(summarize_insurance_by_phone(phone))
 
-# Get extracted data from LLM
-insurance_summary = extract_insurance_details_llm(policy_text)
-
-# Print extracted details
-print(insurance_summary)
