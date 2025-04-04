@@ -10,7 +10,7 @@ if "messages" not in st.session_state:
 
 def on_message(ws, message):
     st.session_state["messages"].append({"text": message, "sender": "bot"})
-    st.experimental_rerun()
+    st.rerun()
 
 def on_open(ws):
     st.session_state["ws"] = ws
@@ -27,11 +27,12 @@ if "ws_thread" not in st.session_state:
 
 for msg in st.session_state["messages"]:
     alignment = "user" if msg["sender"] == "user" else "bot"
-    st.chat_message(alignment, msg["text"])
+    with st.chat_message(alignment):
+        st.write(msg["text"])
 
 user_input = st.text_input("Type a message", key="user_input")
 if st.button("Send") and user_input:
     st.session_state["messages"].append({"text": user_input, "sender": "user"})
     if "ws" in st.session_state:
         st.session_state["ws"].send(user_input)
-    st.experimental_rerun()
+    st.rerun()
