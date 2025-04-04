@@ -12,7 +12,7 @@ requests
 
 # Miscellaneous Packages
 graphviz
-
+pdfplumber
 
 #streamlit
 streamlit
