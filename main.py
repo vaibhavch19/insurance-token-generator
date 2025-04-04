@@ -158,11 +158,25 @@ def agent_node(state: State) -> Dict:
             }
 
     # Invoke LLM with current conversation and state
-    response = llm_with_tools.invoke([{'role': 'system', 'content': system_prompt}] + messages)
+    # response = llm_with_tools.invoke([{'role': 'system', 'content': system_prompt}] + messages)
+    response = asyncio.run(send_message_to_backend(messages[-1].content))
+
     return {'messages': [response]}
 
+##########################################
+import asyncio
+import websockets
+import json
 
+WEBSOCKET_URL = "ws://localhost:8000/ws"  # Ensure it matches FastAPI WebSocket route
 
+async def send_message_to_backend(message):
+    async with websockets.connect(WEBSOCKET_URL) as websocket:
+        await websocket.send(message)
+        response = await websocket.recv()
+        return response
+
+#############################
 def run_conversation():
     config = {'configurable': {'thread_id': '1'}}
     
@@ -212,6 +226,8 @@ graph = builder.compile(checkpointer=memory)
 
 if __name__ == '__main__':
     run_conversation()
+
+
 
 
 
