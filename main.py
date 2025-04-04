@@ -1,4 +1,40 @@
+from typing import List, Dict, Optional, Annotated
+from typing_extensions import TypedDict
+from langchain_openai import ChatOpenAI
 
+API_URL = "http://localhost:8000"
+
+# ========== STATE ==========
+class State(TypedDict):
+    messages: Annotated[List[AnyMessage], add_messages]
+    name: Optional[str]
+    
+    phone_number: Optional[str]
+    policy_number: Optional[str]
+    rsa: Optional[bool]
+    accident_date: Optional[str]
+    accident_time: Optional[str]
+    accident_location: Optional[str]
+    accident_details: Optional[str]
+    towing_service: Optional[bool]
+    cab_service: Optional[bool]
+    ftp_link: Optional[str]
+    scene_recreation: Optional[bool]
+    accident_summary: Optional[str]
+    ticket_id: Optional[str]
+    ticket_created: Optional[bool]
+    ticket_details: Optional[Dict]
+    
+     # New flag to track confirmation state
+
+# ========== LLM ==========
+# llm = AzureChatOpenAI(
+#     api_key=os.getenv('AZURE_OPENAI_API_KEY'),
+#     api_version='2023-06-01-preview',
+#     azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT'),
+#     temperature=0.7
+# )
+llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="320858c52dcd4d0a87c913604e16d562")
 
 # ========== TOOLS ==========
  
