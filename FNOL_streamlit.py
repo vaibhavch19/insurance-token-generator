@@ -14,7 +14,7 @@ if "messages" not in st.session_state:
 # WebSocket message handler
 def on_message(ws, message):
     st.session_state["messages"].append({"text": message, "sender": "bot"})
-    st.rerun()  # Updated from st.experimental_rerun()
+    st.rerun()
 
 # WebSocket connection handler
 def on_open(ws):

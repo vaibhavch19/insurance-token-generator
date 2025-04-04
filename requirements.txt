@@ -9,10 +9,12 @@ langfuse
 flask
 flask-cors
 requests
+websocket
 
 # Miscellaneous Packages
 graphviz
+pdfplumber
 
-
-#streamlit
+# Packages for Frontend
 streamlit
+watchdog
