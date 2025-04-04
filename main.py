@@ -143,10 +143,9 @@ def agent_node(state: State) -> Dict:
     - Ask the accident date and time.
     - Check if RSA (Road Side Assistance) is included in the policy.
     - Ask user for car towing and cab service if RSA is included.
-    - ask for users location (a google map link) and send it to ##DATABASE##.
+    - ask for users a nearby location where the accident happened.
     - send user a FTP link for a summary of accident with pictures or videos.
-    - make a scene recreation for the accident and check it with the user.
-    - when the user confirms, create a ticket and send it to the database.
+    - create a ticket and send it to the user.
     
     Current state:
     Phone Number: {state.get('phone_number', 'Not provided')}
