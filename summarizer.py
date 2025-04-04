@@ -5,7 +5,7 @@ from langchain.schema import SystemMessage, HumanMessage
 from langchain.sql_database import SQLDatabase
 
 # Initialize the LLM
-llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="sk-your-key")
+llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="320858c52dcd4d0a87c913604e16d562")
 
 # Connect to SQL database (replace with your URI if not SQLite)
 db = SQLDatabase.from_uri("sqlite:///your_database.db")
@@ -39,7 +39,9 @@ def extract_insurance_details_llm(text):
     3. **Policy Validity**: Extract if the policy is currently valid or expired.
     4. **Deductible Amount**: The compulsory deductible amount in INR.
     5. **Liability Amount**: The third-party property damage liability amount.
-    6. **Other Claims Available**: Any additional claims mentioned (e.g., PA Cover, Roadside Assistance, etc.).
+    6. **Roadside Assistance(RSA) Availability**: Whether roadside assisstance(RSA) is available or not.
+    7. **Other Claims Available**: Any additional claims mentioned (e.g., PA Cover, Roadside Assistance, etc.).
+
 
     Ensure the response is **valid JSON format** like this:
     ```json
@@ -49,6 +51,7 @@ def extract_insurance_details_llm(text):
       "policy_valid": "Valid/Expired",
       "deductible": "Rs. XXXX",
       "liability_amount": "Rs. XXXX",
+      "RSA": "Yes/No",
       "other_claims": ["Claim 1", "Claim 2"]
     }}
     ```
