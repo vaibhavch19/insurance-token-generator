@@ -35,3 +35,4 @@ if st.button("Send") and user_input:
     if "ws" in st.session_state:
         st.session_state["ws"].send(user_input)
     st.experimental_rerun()
+
