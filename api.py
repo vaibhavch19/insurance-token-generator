@@ -61,5 +61,41 @@ async def raise_ticket(data: dict):
     except Exception as e:
         return {"error": "Failed to submit claim", "details": str(e)}
 
+# API Endpoint to create an FNOL entry
+@app.post("/create_fnol/")
+def create_fnol_entry(data: FNOLRequest):
+    ticket_id = str(uuid4())  # Generate unique ticket ID
+    ftp_link = "https://dummy-ftp-link.com"
+    report_link = "https://dummy-report-link.com"
+    ticket_date_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")  # Capture API call timestamp
+
+    # Insert data into the database
+    conn = sqlite3.connect("motor_insurance_policy.db")
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        """INSERT INTO fnol_details (ticket_id, phone_number, policy_number, ftp_link, report_link, location, 
+                                     accident_date_time, ticket_date_time)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (ticket_id, data.phone_number, data.policy_number, ftp_link, report_link, data.location, 
+         data.accident_date_time, ticket_date_time)
+    )
+    
+    conn.commit()
+    conn.close()
+
+    # Return response with all details
+    return {
+        "message": "FNOL Entry Created",
+        "ticket_id": ticket_id,
+        "phone_number": data.phone_number,
+        "policy_number": data.policy_number,
+        "location": data.location,
+        "ftp_link": ftp_link,
+        "report_link": report_link,
+        "accident_date_time": data.accident_date_time,
+        "ticket_date_time": ticket_date_time
+    }
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
