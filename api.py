@@ -46,15 +46,15 @@ async def get_policy_summary(policy_id: str):
     except Exception as e:
         return {"error": "Failed to fetch policy summary", "details": str(e)}
 
-@app.post("/api/submit-claim")
-async def submit_claim(data: dict):
-    """Submit a claim with policy ID and incident details"""
+@app.post("/api/raise_ticket")
+async def raise_ticket(data: dict):
+    """Submit a ticket with policy ID and incident details"""
     try:
         policy_id = data.get("policyId")
         incident_details = data.get("incidentDetails")
         return {
             "success": True,
-            "message": "Claim submitted successfully",
+            "message": "ticket raised successfully",
             "policyId": policy_id,
             "incidentDetails": incident_details,
         }
