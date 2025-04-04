@@ -1,20 +1,26 @@
 import pdfplumber
 import json
+import os
 import sqlite3  # or use your specific database module
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import SystemMessage, HumanMessage
 from langchain.sql_database import SQLDatabase
-
+from langchain_google_genai import ChatGoogleGenerativeAI
 # Initialize the LLM
-llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="320858c52dcd4d0a87c913604e16d562")
-
+# llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="320858c52dcd4d0a87c913604e16d562")
+llm = ChatGoogleGenerativeAI(
+    api_key=os.getenv('GOOGLE_GENERATIVE_API_KEY'),
+    model="gemini-1.5-flash",
+    temperature=0.7,
+    max_tokens=100
+)
 # Connect to SQL database (replace with your URI if not SQLite)
-db = SQLDatabase.from_uri("sqlite:///your_database.db")
+db = SQLDatabase.from_uri("sqlite:///motor_insurance_policy.db")
 
 # Function to fetch PDF path using phone number
 def get_pdf_path_from_phone(phone_number):
     # Direct SQL query
-    with sqlite3.connect("your_database.db") as conn:
+    with sqlite3.connect("motor_insurance_policy.db") as conn:
         cursor = conn.cursor()
         query = "SELECT pdf_path FROM insurance_documents WHERE phone_number = ?"
         cursor.execute(query, (phone_number,))

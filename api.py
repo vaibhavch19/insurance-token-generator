@@ -22,25 +22,37 @@ app.add_middleware(
 
 # Store active WebSocket connections
 connections = set()
+@app.post("/chat")
+async def chat_endpoint(data: dict):
+    """Handles conversation with the chatbot"""
+    user_message = data.get("message", "")
+    if not user_message.strip():
+        return {"response": "Message cannot be empty."}
+    
+    # Send message to agent in `main.py`
+    state = graph.invoke({'messages': [HumanMessage(content=user_message)]})
+    
+    # Extract AI response
+    ai_response = state["messages"][-1].content if state["messages"] else "No response"
+    return {"response": ai_response}
+# @app.websocket("/ws")
+# async def websocket_endpoint(websocket: WebSocket):
+#     await websocket.accept()
+#     connections.add(websocket)
+#     # try:
+#     while True:
+#         data = await websocket.receive_text()
+#         print(f"Received: {data}")
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    connections.add(websocket)
-    # try:
-    while True:
-        data = await websocket.receive_text()
-        print(f"Received: {data}")
-
-        # Example processing
-        if data.replace(" ", "").isalnum():  # Allows numbers and letters
-            policy_summary = summarize_insurance_by_phone(data)
-            response = json.dumps(policy_summary)
-        else:
-            response = "Please provide a valid phone number or policy number."
+#         # Example processing
+#         if data.replace(" ", "").isalnum():  # Allows numbers and letters
+#             policy_summary = summarize_insurance_by_phone(data)
+#             response = json.dumps(policy_summary)
+#         else:
+#             response = "Please provide a valid phone number or policy number."
 
 
-        await websocket.send_text(response)
+#         await websocket.send_text(response)
     # except WebSocketDisconnect:
     #     connections.remove(websocket)
 
@@ -74,6 +86,19 @@ async def raise_ticket(data: dict):
         }
     except Exception as e:
         return {"error": "Failed to submit claim", "details": str(e)}
+@app.post("/chat")
+async def chat_endpoint(data: dict):
+    """Handle chatbot conversation"""
+    user_message = data.get("message", "")
+
+    if not user_message.strip():
+        return {"response": "Please enter a valid message."}
+
+    # Forward message to main.py (your LangChain chatbot logic)
+    response = requests.post("http://localhost:8001/chatbot", json={"message": user_message})
+    
+    return response.json()  # Return chatbot response
+
 
 # Define request model
 class FNOLRequest(BaseModel):
