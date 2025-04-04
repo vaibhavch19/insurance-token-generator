@@ -1,26 +1,31 @@
 from typing import List, Dict, Optional, Annotated
 from typing_extensions import TypedDict
 from langchain_openai import ChatOpenAI
-from langgraph.graph.message import AnyMessage, add_messages
+##############################
+from typing import Dict, List, Optional, Annotated
+from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import AnyMessage, add_messages
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_core.tools import tool
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_openai import AzureChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 import requests
 from datetime import datetime
 import os
-import json
 from dotenv import load_dotenv
-import summarizer  # 🔄 UPDATED: Import summarizer.py
 
 load_dotenv()
+
 API_URL = "http://localhost:8000"
 
 # ========== STATE ==========
 class State(TypedDict):
     messages: Annotated[List[AnyMessage], add_messages]
+    name: Optional[str]
+    
     phone_number: Optional[str]
     policy_number: Optional[str]
     rsa: Optional[bool]
@@ -36,90 +41,228 @@ class State(TypedDict):
     ticket_id: Optional[str]
     ticket_created: Optional[bool]
     ticket_details: Optional[Dict]
+    
+     # New flag to track confirmation state
 
 # ========== LLM ==========
+# llm = AzureChatOpenAI(
+#     api_key=os.getenv('AZURE_OPENAI_API_KEY'),
+#     api_version='2023-06-01-preview',
+#     azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT'),
+#     temperature=0.7
+# )
+#llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="320858c52dcd4d0a87c913604e16d562")
 llm = ChatGoogleGenerativeAI(
     api_key=os.getenv('GOOGLE_GENERATIVE_API_KEY'),
     model="gemini-1.5-flash",
     temperature=0.7,
     max_tokens=100
 )
-
 # ========== TOOLS ==========
+ 
 @tool
-def fetch_policy_details(phone_number: str) -> Dict:
-    '''Fetch policy details using the given phone number.'''
-    policy_details = summarizer.summarize_insurance_by_phone(phone_number)  # 🔄 UPDATED: Fetch from summarizer.py
-    try:
-        policy_json = json.loads(policy_details)  # Ensure it's valid JSON
-        return policy_json
-    except json.JSONDecodeError:
-        return {"error": "Could not fetch policy details."}
+def fetch_policy(policy_number: str) -> Dict:
+    '''Fetch policy based on policy number'''
+    response = requests.post(f'{API_URL}/fetch-policy-number', json={'tests': tests})
+    policy_number = response.json()['policy_number'] if response.status_code == 200 else ''
+    return {'policy_number': policy_number}
+    
+@tool
+def fetch_RSA_details(policy_number: str) -> Dict:
+    '''Fetch if RSA is included in the policy'''
+    response = requests.post(f'{API_URL}/fetch-rsa-details', json={'location': location, 'tests': tests})
+    rsa_details = response.json()['rsa_details'] if response.status_code == 200 else {}
+    return {'rsa_details': rsa_details}
+   
+@tool
+def fetch_user_summary(user_summary: str) -> Dict:
+    '''Fetch user summary of accident with pictures or videos on a FTP link'''
+    response = requests.post(f'{API_URL}/fetch-accident-summary', json={'tests': tests})
+    summary = response.json()['accident_summary'] if response.status_code == 200 else {}
+    return {'accident_summary': summary}
+    
 
-tools = [fetch_policy_details]
+@tool
+def save_ticket_details(name: str, age: int, date: str, slot: str) -> Dict:
+    '''Save ticket details'''
+    return {
+        'name': name,
+        'date':date,
+        'RSA details': True,
+        'user_summary': True,
+        'awaiting_confirmation': True
+    }    
+
+@tool  
+def create_fnol(ticket_id: str, ftp_link: str, report_link: str, ticket_date_time: str) -> Dict:
+    '''Save ticket details'''
+    return {
+        'ticket_id': ticket_id,
+        'ftp_link':ftp_link,
+        'report_link': report_link,
+        'ticket_date_time': True,
+       
+    }
+
+@tool
+def raise_ticket(state: State) -> Dict:
+    '''Book an appointment with all collected details'''
+    if not state.get('ticket_created', False):
+        return {'error': 'Ticket not created yet'}
+    if not state.get('awaiting_confirmation', False):
+        return {'error': 'Confirmation not received'}
+    if not state.get('accident_summary', False):
+        return {'error': 'Accident summary not provided'}
+    
+    if not state.get('accident_location', False):
+        return {'error': 'Accident location not provided'}
+    if not state.get('accident_date', False):
+        return {'error': 'Accident date not provided'}
+    if not state.get('accident_time', False):
+        return {'error': 'Accident time not provided'}
+    if not state.get('accident_details', False):
+        return {'error': 'Accident details not provided'}
+    
+    
+    
+    response = requests.post(f'{API_URL}/ticket_raising', json={
+       
+        'policy': state['policy'],
+        'rsa': state['rsa'],
+        'accident_date': state['accident_date'],
+        'accident_time': state['accident_time'],
+        'accident_location': state['accident_location'],
+        'accident_details': state['accident_details'],
+        'towing_service': state['towing_service'],
+        'cab_service': state['cab_service'],
+        'ftp_link': state['ftp_link'],
+        'scene_recreation': state['scene_recreation'],
+        'accident_summary': state['accident_summary'],
+        'ticket_id': state['ticket_id'],
+        'ticket_created': state['ticket_created'],
+        'awaiting_confirmation': state['awaiting_confirmation'],
+
+        
+    })
+    result = response.json() if response.status_code == 200 else {'error': 'Booking failed'}
+    return result
+
+tools = [
+    fetch_policy,
+    fetch_RSA_details, 
+    fetch_user_summary,
+    save_ticket_details,
+    raise_ticket,
+    create_fnol
+]
+
 llm_with_tools = llm.bind_tools(tools)
+
 
 ############################
 def agent_node(state: State) -> Dict:
     messages = state['messages']
-
-    # 🔄 UPDATED: If phone number is not collected, ask for it first
-    if not state.get('phone_number'):
-        return {'messages': [AIMessage(content="Please provide your mobile number to fetch your policy details.")]}
-
-    # 🔄 UPDATED: If phone number is collected but policy not fetched, fetch it
-    if state.get('phone_number') and not state.get('policy_number'):
+    
+    # Initial greeting
+    if not messages:
         return {
-            'messages': [AIMessage(content="Fetching your policy details...")],
-            'tool_calls': [{'name': 'fetch_policy_details', 'args': {'phone_number': state['phone_number']}}]
+            'messages': [AIMessage(content='Hello! I am your car insurance agent. How may I assist you today?')]
         }
 
-    # If we have policy details, continue normal conversation
+    # System prompt for LLM
+    system_prompt = f'''
+    You are a helpful assistant for a car insurance company, assisting customers with raising First notice of loss tickets.
+    Use the provided tools to:
+    - Fetch details based on phone number/policy number.
+    - Ask the accident date and time.
+    - Check if RSA (Road Side Assistance) is included in the policy.
+    - Ask user for car towing and cab service if RSA is included.
+    - ask for users a nearby location where the accident happened.
+    - send user a FTP link for a summary of accident with pictures or videos.
+    - create a ticket and send it to the user.
+    
+    Current state:
+    Phone Number: {state.get('phone_number', 'Not provided')}
+    Policy Number: {state.get('policy_number', 'Not provided')}
+    RSA: {state.get('rsa', 'Not provided')}
+    Accident Date: {state.get('accident_date', 'Not provided')}
+    Accident Time: {state.get('accident_time', 'Not provided')}
+    Accident Location: {state.get('accident_location', 'Not provided')}
+    Accident Details: {state.get('accident_details', 'Not provided')}
+    Towing Service: {state.get('towing_service', 'Not provided')}
+    Cab Service: {state.get('cab_service', 'Not provided')}
+    FTP Link: {state.get('ftp_link', 'Not provided')}
+    Scene Recreation: {state.get('scene_recreation', 'Not provided')}
+    Accident Summary: {state.get('accident_summary', 'Not provided')}
+    Ticket Created: {state.get('ticket_created', False)}
+    Ticket ID: {state.get('ticket_id', 'Not provided')}
+    Awaiting Confirmation: {state.get('awaiting_confirmation', False)}
+
+    Rules:
+    1. Collect all required details (mobile number, policy number, RSA if needed, date, time) before creating a ticket. In fact, you can start by capturing the name and phone number and policy number.
+    2. After collecting all details via save_accident_details, present the scene recreation to the user for confirmation.
+    3. Only call create_ticket after explicit user confirmation (e.g., 'yes' or 'confirm').
+    4. If user says 'no' or requests changes during confirmation, ask what to modify.
+    5. After successful booking, ask if they need more help.
+    6. If asked about unrelated topics, politely refuse and redirect to ticket raising.
+    Current date: {datetime.now().strftime('%Y-%m-%d')}
+    '''
+
+    # Handle tickt raising response
     last_message = messages[-1].content.lower() if messages and isinstance(messages[-1], HumanMessage) else ''
+    if state.get('awaiting_confirmation', False):
+        if 'yes' in last_message or 'confirm' in last_message:
+            return {
+                'messages': [AIMessage(content='Great, I\'ll raise your ticket now...')],
+                'tool_calls': [{'name': 'raise_ticket', 'args': {'state': state}}]
+            }
+        elif 'no' in last_message or 'change' in last_message:
+            return {
+                'messages': [AIMessage(content='What would you like to change?')],
+                'awaiting_confirmation': False
+            }
+        else:
+            return {
+                'messages': [AIMessage(content='Please confirm with \'yes\' or \'no\', or let me know what to change.')]
+            }
 
-    return {'messages': [AIMessage(content="How may I assist you today regarding your policy?")]}
+    return {'messages': [messages[-1].content]}
 
-############################
+##########################################
+
+#############################
 def run_conversation():
     config = {'configurable': {'thread_id': '1'}}
     
     print('Starting conversation...')
-    state = {'messages': [], 'phone_number': None, 'policy_number': None}
-
+    state = graph.invoke({'messages': []}, config)
+    print(f'\nAssistant: {state["messages"][-1].content}')
+    
     while True:
         user_input = input('\nYou: ').strip()
         if user_input.lower() in ['quit', 'exit']:
             print('\nAssistant: Goodbye!')
+          # Skip empty input
+        if not user_input:
+            print("Input cannot be empty. Please enter a valid message.")
+            continue
+
+
             break
+        
+        for event in graph.stream(
+            {'messages': [HumanMessage(content=user_input)]},
+            config
+        ):
+            for value in event.values():
+                if 'messages' in value and value['messages']:
+                    message = value['messages'][-1]
+                    if isinstance(message, AIMessage):
+                        if message.content:
+                            print(f'\nAssistant: {message.content}')
+                        elif message.tool_calls:
+                            print('\nAssistant: Processing your request...')
 
-        # 🔄 UPDATED: If phone number is missing, store it and trigger policy fetch
-        if not state['phone_number']:
-            state['phone_number'] = user_input
-            response = agent_node(state)
-            state['messages'].append(HumanMessage(content=user_input))
-            print(f"\nAssistant: {response['messages'][-1].content}")
-            continue
-
-        # 🔄 UPDATED: Handle normal conversation after policy details are fetched
-        state['messages'].append(HumanMessage(content=user_input))
-        response = agent_node(state)
-
-        if 'tool_calls' in response:
-            tool_name = response['tool_calls'][0]['name']
-            tool_args = response['tool_calls'][0]['args']
-            
-            if tool_name == "fetch_policy_details":
-                policy_data = fetch_policy_details(tool_args["phone_number"])
-                
-                if "error" in policy_data:
-                    print("\nAssistant: Unable to fetch policy details. Please try again.")
-                else:
-                    state.update(policy_data)  # Store policy details
-                    print("\nAssistant: Policy details retrieved. How may I assist you?")
-
-            continue
-
-        print(f"\nAssistant: {response['messages'][-1].content}")
 
 # ========== GRAPH ==========
 builder = StateGraph(State)
@@ -134,21 +277,11 @@ builder.add_edge('agent', END)
 memory = MemorySaver()
 graph = builder.compile(checkpointer=memory)
 
-######################
-from fastapi import FastAPI
-from pydantic import BaseModel
-
-app = FastAPI()
-
-class ChatRequest(BaseModel):
-    message: str
-
-@app.post("/chatbot")
-async def chatbot_response(request: ChatRequest):
-    """Processes chatbot conversation"""
-    user_message = request.message
-    bot_response = f"Bot received: {user_message}"  
-    return {"response": bot_response}
 
 if __name__ == '__main__':
     run_conversation()
+
+
+
+
+

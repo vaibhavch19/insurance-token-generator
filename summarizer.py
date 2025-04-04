@@ -9,7 +9,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 # Initialize the LLM
 # llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="320858c52dcd4d0a87c913604e16d562")
 llm = ChatGoogleGenerativeAI(
-    api_key=os.getenv('GOOGLE_GENERATIVE_API_KEY'),
+    #api_key=os.getenv('GOOGLE_GENERATIVE_API_KEY'),
+    api_key="AIzaSyAs2IUf5H9I1m9GQ8flGoj0KmAAPCu5DIE",
     model="gemini-1.5-flash",
     temperature=0.7,
     max_tokens=100
