@@ -78,6 +78,6 @@ def summarize_insurance_by_phone(phone_number):
         return str(e)
 
 # Example usage:
-phone = input("Enter client phone number: ")
-print(summarize_insurance_by_phone(phone))
+# phone = input("Enter client phone number: ")
+# print(summarize_insurance_by_phone(phone))
 
