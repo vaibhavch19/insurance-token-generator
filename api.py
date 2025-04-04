@@ -1,7 +1,8 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import requests
-import uvicorn 
+import uvicorn
+from summarizer import summarize_insurance_by_phone
 
 app = FastAPI()
 
@@ -21,30 +22,32 @@ connections = set()
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     connections.add(websocket)
-    try:
-        while True:
-            data = await websocket.receive_text()
-            print(f"Received: {data}")
+    # try:
+    while True:
+        data = await websocket.receive_text()
+        print(f"Received: {data}")
 
-            # Example processing
-            if "policy" in data.lower():
-                response = "Please provide your policy number to fetch details."
-            else:
-                response = f"Echo: {data}"
+        # Example processing
+        if "policy" in data.lower():
+            response = "Please provide your policy number to fetch details."
+        else:
+            response = f"Echo: {data}"
 
-            await websocket.send_text(response)
-    except WebSocketDisconnect:
-        connections.remove(websocket)
+        await websocket.send_text(response)
+    # except WebSocketDisconnect:
+    #     connections.remove(websocket)
 
-@app.get("/api/policy-summary/{policy_id}")
-async def get_policy_summary(policy_id: str):
-    """Fetch policy summary from external API"""
-    try:
-        summarizer_url = f"http://policy-summarizer-url/api/summary/{policy_id}"
-        response = requests.get(summarizer_url)
-        return response.json()
-    except Exception as e:
-        return {"error": "Failed to fetch policy summary", "details": str(e)}
+@app.get("/api/policy-summary/{phone_number}")
+def get_policy_summary(phone_number: str):
+    print(f'{phone_number = }')
+    # try:
+    #     summarizer_url = f"http://policy-summarizer-url/api/summary/{policy_id}"
+    #     response = requests.get(summarizer_url)
+    #     return response.json()
+    # except Exception as e:
+    #     return {"error": "Failed to fetch policy summary", "details": str(e)}
+    return summarize_insurance_by_phone(phone_number)
+
 
 @app.post("/api/raise_ticket")
 async def raise_ticket(data: dict):

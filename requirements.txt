@@ -9,7 +9,9 @@ langfuse
 flask
 flask-cors
 requests
-websocket
+websocket-client
+fastapi
+uvicorn[standard]
 
 # Miscellaneous Packages
 graphviz
