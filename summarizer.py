@@ -4,7 +4,7 @@ import os
 import sqlite3  # or use your specific database module
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import SystemMessage, HumanMessage
-from langchain.sql_database import SQLDatabase
+from langchain_community.utilities import SQLDatabase
 from langchain_google_genai import ChatGoogleGenerativeAI
 # Initialize the LLM
 # llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="320858c52dcd4d0a87c913604e16d562")
@@ -84,7 +84,7 @@ def summarize_insurance_by_phone(phone_number):
     except Exception as e:
         return str(e)
 
-# Example usage:
-# phone = input("Enter client phone number: ")
-# print(summarize_insurance_by_phone(phone))
+if __name__ == "__main__":
+    phone = input("Enter client phone number: ")
+    print(summarize_insurance_by_phone(phone))
 

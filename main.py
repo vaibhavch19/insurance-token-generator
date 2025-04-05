@@ -16,8 +16,11 @@ import requests
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-
+from langchain_core.messages import SystemMessage
 load_dotenv()
+###############
+from summarizer import summarize_insurance_by_phone
+import json
 
 API_URL = "http://localhost:8000"
 
@@ -53,55 +56,68 @@ class State(TypedDict):
 # )
 #llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="320858c52dcd4d0a87c913604e16d562")
 llm = ChatGoogleGenerativeAI(
-    api_key=os.getenv('GOOGLE_GENERATIVE_API_KEY'),
+    api_key="AIzaSyAs2IUf5H9I1m9GQ8flGoj0KmAAPCu5DIE",
     model="gemini-1.5-flash",
     temperature=0.7,
     max_tokens=100
 )
 # ========== TOOLS ==========
- 
 @tool
-def fetch_policy(policy_number: str) -> Dict:
-    '''Fetch policy based on policy number'''
-    response = requests.post(f'{API_URL}/fetch-policy-number', json={'tests': tests})
-    policy_number = response.json()['policy_number'] if response.status_code == 200 else ''
-    return {'policy_number': policy_number}
-    
+def fetch_policy_summary(phone_number: str) -> str:
+    '''Fetch policy details using the user's phone number'''
+    try:
+        summary_str = summarize_insurance_by_phone(phone_number)
+        summary = json.loads(summary_str)
+        return f"""
+Here are your policy details:
+
+• Policy Number: {summary["policy_number"]}
+• Policy Type: {summary["policy_type"]}
+• Validity: {summary["policy_valid"]}
+• Deductible: {summary["deductible"]}
+• Liability: {summary["liability_amount"]}
+• RSA: {summary["RSA"]}
+• Other Claims: {", ".join(summary["other_claims"]) if "other_claims" in summary else "None"}
+
+Please confirm if these details are correct.
+"""
+    except Exception as e:
+        return f"❌ Error fetching policy summary: {e}"
+        return {"error": str(e)}
 @tool
 def fetch_RSA_details(policy_number: str) -> Dict:
     '''Fetch if RSA is included in the policy'''
-    response = requests.post(f'{API_URL}/fetch-rsa-details', json={'location': location, 'tests': tests})
-    rsa_details = response.json()['rsa_details'] if response.status_code == 200 else {}
+    response = requests.post(f'{API_URL}/fetch-rsa-details', json={'policy_number': policy_number})
+    rsa_details = response.json().get('rsa_details', {}) if response.status_code == 200 else {}
     return {'rsa_details': rsa_details}
-   
 @tool
-def fetch_user_summary(user_summary: str) -> Dict:
-    '''Fetch user summary of accident with pictures or videos on a FTP link'''
-    response = requests.post(f'{API_URL}/fetch-accident-summary', json={'tests': tests})
-    summary = response.json()['accident_summary'] if response.status_code == 200 else {}
-    return {'accident_summary': summary}
-    
+def get_policy_summary(user_summary: str) -> Dict:
+    '''Fetch policy summary using phone number through summarizer.py'''
+    response = requests.post(f'{API_URL}/get_policy_summary', json={'phone_number': user_summary})
+    policy_summary = response.json()['policy_summary'] if response.status_code == 200 else {}
+    return {'policy_summary': policy_summary}
+  
 
-@tool
-def save_ticket_details(name: str, age: int, date: str, slot: str) -> Dict:
-    '''Save ticket details'''
-    return {
-        'name': name,
-        'date':date,
-        'RSA details': True,
-        'user_summary': True,
-        'awaiting_confirmation': True
-    }    
+# @tool
+# def raise_ticket(name: str, age: int, date: str, slot: str) -> Dict:
+#     '''Save ticket details'''
+#     return {
+#         'name': name,
+#         'age': age,
+#         'date': date,
+         
+#     }
+          
 
 @tool  
 def create_fnol(ticket_id: str, ftp_link: str, report_link: str, ticket_date_time: str) -> Dict:
-    '''Save ticket details'''
+    '''Fetch user summary of accident with pictures or videos on the FTP link'''
     return {
         'ticket_id': ticket_id,
         'ftp_link':ftp_link,
         'report_link': report_link,
         'ticket_date_time': True,
-       
+        'accident_summary': True,
     }
 
 @tool
@@ -126,7 +142,7 @@ def raise_ticket(state: State) -> Dict:
     
     
     response = requests.post(f'{API_URL}/ticket_raising', json={
-       
+        'fetch_policy' : state['fetch_policy'],
         'policy': state['policy'],
         'rsa': state['rsa'],
         'accident_date': state['accident_date'],
@@ -148,10 +164,8 @@ def raise_ticket(state: State) -> Dict:
     return result
 
 tools = [
-    fetch_policy,
+    fetch_policy_summary,
     fetch_RSA_details, 
-    fetch_user_summary,
-    save_ticket_details,
     raise_ticket,
     create_fnol
 ]
@@ -171,12 +185,12 @@ def agent_node(state: State) -> Dict:
 
     # System prompt for LLM
     system_prompt = f'''
-    You are a helpful assistant for a car insurance company, assisting customers with raising First notice of loss tickets.
-    Use the provided tools to:
-    - Fetch details based on phone number/policy number.
-    - Ask the accident date and time.
-    - Check if RSA (Road Side Assistance) is included in the policy.
-    - Ask user for car towing and cab service if RSA is included.
+   You are a helpful insurance assistant helping users file accident claims.
+   Start by greeting the user.
+   When the user mentions an accident or claim, politely ask for their phone number so you can fetch their policy details.
+   Once phone number is provided, call the `fetch_policy_summary` tool to retrieve policy info. Wait for confirmation from user.
+   If RSA is included in the policy, ask the user if they require towing or cab services.
+    
     - ask for users a nearby location where the accident happened.
     - send user a FTP link for a summary of accident with pictures or videos.
     - create a ticket and send it to the user.
@@ -226,7 +240,8 @@ def agent_node(state: State) -> Dict:
                 'messages': [AIMessage(content='Please confirm with \'yes\' or \'no\', or let me know what to change.')]
             }
 
-    return {'messages': [messages[-1].content]}
+    response = llm_with_tools.invoke(messages + [SystemMessage(content=system_prompt)])
+    return {'messages': [response]}
 
 ##########################################
 
@@ -248,7 +263,7 @@ def run_conversation():
             continue
 
 
-            break
+            
         
         for event in graph.stream(
             {'messages': [HumanMessage(content=user_input)]},
