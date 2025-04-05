@@ -71,7 +71,7 @@ def extract_insurance_details_llm(text):
         SystemMessage(content="You are an expert in document processing and data extraction."),
         HumanMessage(content=prompt)
     ]
-    response = llm(messages)
+    response = llm.invoke(messages)
     return response.content
 
 # 🔄 Main Execution Flow

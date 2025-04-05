@@ -171,7 +171,12 @@ tools = [
 ]
 
 llm_with_tools = llm.bind_tools(tools)
+import re
 
+# Helper function to detect phone numbers
+def extract_phone_number(text: str) -> Optional[str]:
+    match = re.search(r'\b\d{10}\b', text)
+    return match.group(0) if match else None
 
 ############################
 def agent_node(state: State) -> Dict:
@@ -182,6 +187,37 @@ def agent_node(state: State) -> Dict:
         return {
             'messages': [AIMessage(content='Hello! I am your car insurance agent. How may I assist you today?')]
         }
+    phone_number = state.get("phone_number")
+    policy_number = state.get("policy_number")
+    location = state.get("accident_location")
+    accident_date = state.get("accident_date")
+    accident_time = state.get("accident_time")
+
+    # Combine date and time safely
+    accident_date_time = f"{accident_date} {accident_time}" if accident_date and accident_time else None
+
+    # Only call create_fnol_ticket if all required fields are available
+    if phone_number and policy_number and location and accident_date_time:
+        fnol_response = create_fnol_ticket(phone_number, policy_number, location, accident_date_time)
+
+        if "ftp_link" in fnol_response:
+            ftp_link = fnol_response["ftp_link"]
+            return {
+                'messages': [AIMessage(content=f'''
+    ✅ Your FNOL ticket has been created!
+
+    📎 Please upload accident photos/videos here: {ftp_link}
+
+    Do you need anything else?''')],
+                'ftp_link': ftp_link,
+                'ticket_created': True,
+                'ticket_id': fnol_response.get('ticket_id', ''),
+                'accident_summary': True
+            }
+        else:
+            return {
+                'messages': [AIMessage(content="❌ There was an issue creating your FNOL ticket. Please try again later.")]
+            }
 
     # System prompt for LLM
     system_prompt = f'''
@@ -278,6 +314,24 @@ def run_conversation():
                         elif message.tool_calls:
                             print('\nAssistant: Processing your request...')
 
+import requests
+
+def create_fnol_ticket(phone_number, policy_number, location, accident_date_time):
+    fnol_data = {
+        "phone_number": phone_number,
+        "policy_number": policy_number,
+        "location": location,
+        "accident_date_time": accident_date_time
+    }
+
+    try:
+        response = requests.post("http://localhost:5000/create_fnol/", json=fnol_data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"error": "Failed to create FNOL entry", "details": response.text}
+    except Exception as e:
+        return {"error": str(e)}
 
 # ========== GRAPH ==========
 builder = StateGraph(State)
