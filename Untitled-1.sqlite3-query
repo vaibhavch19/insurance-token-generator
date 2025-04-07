@@ -1,0 +1,10 @@
+-- database: ./FNOL_TICKETS.db
+
+CREATE TABLE fnol_details (
+    ticket_id TEXT PRIMARY KEY,
+    phone_number TEXT,
+    policy_number TEXT,
+    location TEXT,
+    accident_date_time TEXT,
+    ticket_date_time TEXT
+);

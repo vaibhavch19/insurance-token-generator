@@ -6,6 +6,9 @@ from langchain.chat_models import ChatOpenAI
 from langchain.schema import SystemMessage, HumanMessage
 from langchain_community.utilities import SQLDatabase
 from langchain_google_genai import ChatGoogleGenerativeAI
+import fitz  # PyMuPDF
+
+
 # Initialize the LLM
 # llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="320858c52dcd4d0a87c913604e16d562")
 llm = ChatGoogleGenerativeAI(
@@ -59,8 +62,8 @@ def extract_insurance_details_llm(text):
       "policy_valid": "Valid/Expired",
       "deductible": "Rs. XXXX",
       "liability_amount": "Rs. XXXX",
-      "RSA": "Yes/No",
-      "other_claims": ["Claim 1", "Claim 2"]
+      "RSA": "Yes/No"
+      
     }}
     ```
 
@@ -79,10 +82,49 @@ def summarize_insurance_by_phone(phone_number):
     try:
         pdf_path = get_pdf_path_from_phone(phone_number)
         policy_text = extract_text_from_pdf(pdf_path)
-        summary = extract_insurance_details_llm(policy_text)
-        return summary
+
+        # Only ask for necessary fields
+        prompt = f"""
+        Extract the following fields from the motor insurance text and respond with valid JSON only:
+        - policy_number
+        - policy_type
+        - policy_valid
+        - deductible
+        - liability_amount
+        - RSA
+
+        Example:
+        {{
+          "policy_number": "XXXXXX",
+          "policy_type": "Comprehensive",
+          "policy_valid": "Valid",
+          "deductible": "Rs. 2000",
+          "liability_amount": "Rs. 750000",
+          "RSA": "Yes"
+        }}
+
+        Policy Text:
+        {policy_text}
+        """
+
+        messages = [
+            SystemMessage(content="You are a helpful assistant extracting insurance details."),
+            HumanMessage(content=prompt)
+        ]
+
+        response = llm.invoke(messages).content.strip()
+
+        # Clean ```json ... ``` wrapper if it exists
+        if response.startswith("```json"):
+            response = response.removeprefix("```json").removesuffix("```").strip()
+
+        # Safely parse to ensure it's valid JSON
+        data = json.loads(response)
+        return json.dumps(data)
+
     except Exception as e:
-        return str(e)
+        return json.dumps({"error": str(e)})
+
 
 if __name__ == "__main__":
     phone = input("Enter client phone number: ")

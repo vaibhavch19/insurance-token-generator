@@ -7,7 +7,7 @@ from datetime import datetime
 import requests
 import json
 import os
-import uvicorn 
+import uvicorn
 from summarizer import summarize_insurance_by_phone
 
 
@@ -15,20 +15,14 @@ app = Flask(__name__)
 CORS(app)
 
 
-
-
-@app.get("/api/policy-summary/{phone_number}")
-def get_policy_summary(phone_number: str):
-    print(f'{phone_number = }')
+@app.get("/api/policy-summary/<phone_number>")
+def get_policy_summary(phone_number):
+    print(f"Received phone number: {phone_number}")
     try:
-        summarizer_url = f"http://policy-summarizer-url/api/summary/{policy_id}"
-        response = requests.get(summarizer_url)
-        return response.json()
+        summary = summarize_insurance_by_phone(phone_number)
+        return summary
     except Exception as e:
         return {"error": "Failed to fetch policy summary", "details": str(e)}
-       
-    
-    return summarize_insurance_by_phone(phone_number)
 
 
 @app.post("/api/raise_ticket")
@@ -47,13 +41,13 @@ async def raise_ticket(data: dict):
         return {"error": "Failed to submit claim", "details": str(e)}
 
 
-
 # Define request model
 class FNOLRequest(BaseModel):
     phone_number: str
     policy_number: str
     location: str
     accident_date_time: str  # User-provided accident date-time
+
 
 # Function to create an FTP directory
 def create_ftp_directory(ticket_id):
@@ -65,42 +59,73 @@ def create_ftp_directory(ticket_id):
 
     return f"ftp://your-ftp-server.com/fnol_uploads/{ticket_id}/"
 
+
 # API Endpoint to create an FNOL entry
 @app.post("/create_fnol/")
-def create_fnol_entry(data: FNOLRequest):
-    ticket_id = str(uuid4())  # Generate unique ticket ID
-    ftp_link = create_ftp_directory(ticket_id)  # Generate FTP upload folder
-    report_link = None
-    ticket_date_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")  # Capture API call timestamp
+def create_fnol_entry():
+    try:
+        data = request.get_json()
+        print("📥 Incoming FNOL data:", data)
 
-    # Connect to motor_insurance_policy.db
-    conn = sqlite3.connect("motor_insurance_policy.db")
-    cursor = conn.cursor()
+        # Defensive field extraction
+        try:
+            phone_number = data["phone_number"]
+            policy_number = data["policy_number"]
+            location = data["location"]
+            accident_date_time = data["accident_date_time"]
+        except KeyError as e:
+            missing = str(e).strip("'")
+            print(f"❌ Missing required field: {missing}")
+            return {"error": f"Missing required field: {missing}"}, 400
 
-    # Insert FNOL entry
-    cursor.execute(
-        """INSERT INTO fnol_details (ticket_id, phone_number, policy_number, ftp_link, report_link, location, 
-                                     accident_date_time, ticket_date_time)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (ticket_id, data.phone_number, data.policy_number, ftp_link, report_link, data.location, 
-         data.accident_date_time, ticket_date_time)
-    )
-    
-    conn.commit()
-    conn.close()
+        # Generate ticket ID and other details
+        ticket_id = str(uuid4())
+        # ftp_link = create_ftp_directory(ticket_id)
+        # report_link = None
+        ticket_date_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Return response with all details
-    return {
-        "message": "FNOL Entry Created",
-        "ticket_id": ticket_id,
-        "phone_number": data.phone_number,
-        "policy_number": data.policy_number,
-        "location": data.location,
-        "ftp_link": ftp_link,
-        "report_link": report_link,
-        "accident_date_time": data.accident_date_time,
-        "ticket_date_time": ticket_date_time
-    }
+        # Insert into database
+        try:
+            conn = sqlite3.connect("FNOL_TICKETS.db")
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """INSERT INTO fnol_details (ticket_id, phone_number, policy_number, location, 
+                                             accident_date_time, ticket_date_time)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    ticket_id,
+                    phone_number,
+                    policy_number,
+                    location,
+                    accident_date_time,
+                    ticket_date_time,
+                ),
+            )
+            conn.commit()
+        except Exception as db_err:
+            conn.rollback()
+            print("❌ Database insert failed:", str(db_err))
+            return {"error": "Database insert failed", "details": str(db_err)}, 500
+        finally:
+            conn.close()
+
+        # Success response
+        print("✅ FNOL entry successfully created:", ticket_id)
+        return {
+            "message": "FNOL Entry Created",
+            "ticket_id": ticket_id,
+            "phone_number": phone_number,
+            "policy_number": policy_number,
+            "location": location,
+            "accident_date_time": accident_date_time,
+            "ticket_date_time": ticket_date_time,
+        }
+
+    except Exception as e:
+        print("❌ Unexpected error:", str(e))
+        return {"error": "Internal Server Error", "details": str(e)}, 500
+
 
 if __name__ == "__main__":
-   app.run(debug=True)
+    app.run(port=5000)
