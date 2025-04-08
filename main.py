@@ -1,7 +1,9 @@
 from typing import List, Dict, Optional, Annotated
 from typing_extensions import TypedDict
 from langchain_openai import ChatOpenAI
+from fastapi import FastAPI
 
+app = FastAPI()
 ##############################
 from typing import Dict, List, Optional, Annotated
 from typing_extensions import TypedDict
@@ -24,7 +26,7 @@ load_dotenv()
 from summarizer import summarize_insurance_by_phone
 import json
 
-API_URL = "http://localhost:5000"
+API_URL = "http://localhost:5050"
 
 
 # ========== STATE ==========
@@ -69,13 +71,16 @@ llm = ChatGoogleGenerativeAI(
 
 # ========== TOOLS ==========
 @tool
-def get_policy_summary(phone_number: str) -> str:
+def get_policy_summary(phone_number: str) -> dict:
     """Fetch policy details using the user's phone number"""
     try:
         summary_str = summarize_insurance_by_phone(phone_number)
         summary = json.loads(summary_str)
         print(f"✅ [DEBUG] Parsed summary: {summary}")
-        return f"""
+
+        # Return both the display string and updateable state values
+        return {
+            "message": f"""
 Here are your policy details:
 
 • Policy Number: {summary["policy_number"]}
@@ -87,10 +92,15 @@ Here are your policy details:
 • Other Claims: {", ".join(summary["other_claims"]) if "other_claims" in summary else "None"}
 
 Please confirm if these details are correct.
-"""
+""",
+            "policy_number": summary["policy_number"],
+            "rsa": summary["RSA"]
+        }
     except Exception as e:
-        return f"❌ Error fetching policy summary: {e}"
-        return {"error": str(e)}
+        return {
+            "message": f"❌ Error fetching policy summary: {e}",
+            "error": str(e)
+        }
 
 
 @tool
@@ -187,9 +197,16 @@ def raise_ticket(state: State) -> Dict:
 
 
 ############
-@tool
-def create_fnol_ticket_tool(
-    phone_number: str, policy_number: str, location: str, accident_date_time: str
+import requests
+from typing import Dict
+from langchain.tools import Tool
+
+# Actual function to create the FNOL ticket with headers
+def create_fnol_ticket_raw(
+    phone_number: str,
+    policy_number: str,
+    location: str,
+    accident_date_time: str
 ) -> Dict:
     """
     Create FNOL ticket using the user's phone number, policy number, accident location, and date-time.
@@ -203,7 +220,9 @@ def create_fnol_ticket_tool(
             "accident_date_time": accident_date_time,
         }
 
-        response = requests.post("http://localhost:5000/create_fnol/", json=fnol_data)
+        headers = {"Content-Type": "application/json"}
+
+        response = requests.post("http://localhost:5050/create_fnol/", json=fnol_data, headers=headers)
 
         if response.status_code == 200:
             data = response.json()
@@ -223,7 +242,14 @@ def create_fnol_ticket_tool(
     except Exception as e:
         return {"error": str(e), "ticket_created": False}
 
+# Register the tool with LangChain
+create_fnol_ticket_tool = Tool(
+    name="create_fnol_ticket_tool",
+    func=create_fnol_ticket_raw,
+    description="Create FNOL ticket using phone number, policy number, accident location, and accident date-time."
+)
 
+# Add to tools list
 tools = [get_policy_summary, fetch_RSA_details, raise_ticket, create_fnol_ticket_tool]
 
 llm_with_tools = llm.bind_tools(tools)
@@ -238,14 +264,121 @@ def extract_phone_number(text: str) -> Optional[str]:
 
 ############################
 def agent_node(state: State) -> Dict:
+    
+    print("🧠 [DEBUG] agent_node called with state:")
+    print(json.dumps(state, indent=2, default=str))
     messages = state["messages"]
     last_message = messages[-1].content.lower() if messages else ""
+     # System prompt for LLM
+    system_prompt = f"""
+    You are a helpful insurance assistant helping users file accident claims.
+    Start by greeting the user.
+    When the user mentions an accident or claim, politely ask for their phone number so you can fetch their policy details.
+    Once phone number is provided, call the `get_policy_summary` tool to retrieve policy info. Wait for confirmation from user.
+    If RSA is included in the policy, ask the user if they require towing or cab services.
+        
+        - ask for users a nearby location where the accident happened.
+        - create a ticket and send it to the user.
+        - send user a FTP link for a summary of accident with pictures or videos.
+        
+        
+        Current state:
+        Phone Number: {state.get('phone_number', 'Not provided')}
+        Policy Number: {state.get('policy_number', 'Not provided')}
+        RSA: {state.get('rsa', 'Not provided')}
+        Accident Date: {state.get('accident_date', 'Not provided')}
+        Accident Time: {state.get('accident_time', 'Not provided')}
+        Accident Location: {state.get('accident_location', 'Not provided')}
+        Accident Details: {state.get('accident_details', 'Not provided')}
+        Towing Service: {state.get('towing_service', 'Not provided')}
+        Cab Service: {state.get('cab_service', 'Not provided')}
+        FTP Link: {state.get('ftp_link', 'Not provided')}
+        Accident Summary: {state.get('accident_summary', 'Not provided')}
+        Ticket Created: {state.get('ticket_created', False)}
+        Ticket ID: {state.get('ticket_id', 'Not provided')}
+        Awaiting Confirmation: {state.get('awaiting_confirmation', False)}
 
-    # Step 0: Extract phone number from the latest user message
+        Rules:
+        1. Collect all required details (mobile number, policy number, RSA if needed, date, time) before creating a ticket. In fact, you can start by capturing the name and phone number and policy number.
+        2. After collecting all details via save_accident_details, present the scene recreation to the user for confirmation.
+        3. Only call create_fnol_ticket_tool after explicit user confirmation (e.g., 'yes' or 'confirm').
+        4. If user says 'no' or requests changes during confirmation, ask what to modify.
+        5. After successful ticket raising, ask if they need more help.
+        6. If asked about unrelated topics, politely refuse and redirect to ticket raising.
+        Current date: {datetime.now().strftime('%Y-%m-%d')}
+        """
+    last_message = (
+            messages[-1].content.lower()
+            if messages and isinstance(messages[-1], HumanMessage)
+            else ""
+        )
+
+    # 💡 Handle returned FNOL ticket creation result
+    ticket_result = state.get("tool_results", {}).get("create_fnol_ticket_tool")
+    
+    if ticket_result:
+        if ticket_result.get("ticket_created"):
+            return {
+                "messages": [
+                    AIMessage(
+                        content=f"🎟️ Your FNOL ticket has been created successfully!\n\n"
+                                f"• Ticket ID: {ticket_result['ticket_id']}\n"
+                                f"• Upload Link: {ticket_result['ftp_link']}\n\n"
+                                f"Please upload any images or videos of the accident there."
+                    )
+                ],
+                "state": {
+                    **state,
+                    "ticket_created": True,
+                    "ticket_id": ticket_result["ticket_id"],
+                    "ftp_link": ticket_result["ftp_link"],
+                    "ticket_details": ticket_result,
+                },
+            }
+        else:
+            return {
+                "messages": [
+                    AIMessage(content="❌ Failed to create the FNOL ticket. Please try again later.")
+                ]
+            }
+    policy_result = state.get("tool_results", {}).get("get_policy_summary")
+    if policy_result:
+        try:
+            # Extract from the text using regex
+            import re
+
+            policy_number_match = re.search(r"Policy Number:\s*(\w+)", policy_result)
+            rsa_match = re.search(r"RSA:\s*(True|False)", policy_result)
+
+            if policy_number_match:
+                state["policy_number"] = policy_number_match.group(1)
+            if rsa_match:
+                state["rsa"] = rsa_match.group(1).lower() == "true"
+
+            print("✅ [DEBUG] Extracted policy_number and rsa from summary")
+        except Exception as e:
+            print(f"❌ [DEBUG] Error parsing policy result: {e}") 
+    
     if not state.get("phone_number"):
         extracted_phone = extract_phone_number(last_message)
         if extracted_phone:
-            state["phone_number"] = extracted_phone
+            print(f"[DEBUG] Extracted phone number: {extracted_phone}")
+            return {
+                "messages": [
+                    AIMessage(content=f"Thanks! I found your phone number: {extracted_phone}. Let me fetch your policy details...")
+                ],
+                "tool_calls": [
+                    {
+                        "name": "get_policy_summary",
+                        "args": {"phone_number": extracted_phone},
+                    }
+                ],
+                "state": {
+                    **state,
+                    "phone_number": extracted_phone,
+                },
+            }
+
 
     # Step 1: If we have phone number but no policy number, fetch policy
     if state.get("phone_number") and not state.get("policy_number"):
@@ -260,14 +393,32 @@ def agent_node(state: State) -> Dict:
                 }
             ],
         }
-
+    if state.get("rsa") is True and not state.get("towing_service"):
+        return {
+        "messages": [
+            AIMessage(content="Your policy includes RSA. Do you need a towing service or a cab service?")
+        ]
+    }
     # Step 2: Handle user confirmation before raising ticket
     if state.get("awaiting_confirmation", False):
+     if all(state.get(k) for k in ["accident_location", "accident_date", "accident_time"]):
+
         if "yes" in last_message or "confirm" in last_message:
+            combined_datetime = f"{state['accident_date']} {state['accident_time']}"
             return {
-                "messages": [AIMessage(content="Great, I'll raise your ticket now...")],
-                "tool_calls": [{"name": "raise_ticket", "args": {"state": state}}],
+            "messages": [AIMessage(content="Great, I'll raise your ticket now...")],
+             "tool_calls": [
+            {
+                "name": "create_fnol_ticket_tool",
+                "args": {
+                    "phone_number": state["phone_number"],
+                    "policy_number": state["policy_number"],
+                    "location": state["accident_location"],
+                    "accident_date_time": combined_datetime,
+                },
             }
+        ],
+    }
         elif "no" in last_message or "change" in last_message:
             return {
                 "messages": [AIMessage(content="What would you like to change?")],
@@ -311,109 +462,29 @@ Shall I go ahead and create the ticket?
         and state.get("accident_time")
         and state.get("awaiting_confirmation") == True
     ):
+        
+        print("🎟️ [DEBUG] Creating FNOL ticket with data:")
         combined_datetime = f"{state['accident_date']} {state['accident_time']}"
-        fnol_response = create_fnol_ticket_tool.invoke(
-            {
+        return {
+    "messages": [AIMessage(content="Creating your FNOL ticket now...")],
+    "tool_calls": [
+        {
+            "name": "create_fnol_ticket_tool",
+            "args": {
                 "phone_number": state["phone_number"],
                 "policy_number": state["policy_number"],
                 "location": state["accident_location"],
                 "accident_date_time": combined_datetime,
-            }
-        )
-
-        return {
-            "messages": [
-                AIMessage(
-                    content="✅ Your FNOL ticket has been created. Here are the details:\n"
-                    + json.dumps(fnol_response, indent=2)
-                )
-            ],
-            "state": {
-                **state,
-                "ticket_created": fnol_response.get("ticket_created", False),
-                "ticket_id": fnol_response.get("ticket_id"),
-                "ftp_link": fnol_response.get("ftp_link"),
-                "ticket_details": fnol_response.get("ticket_details"),
-                "awaiting_confirmation": False,  # reset
             },
         }
+    ],
+}
 
-    # Default LLM fallback
+    
+    # If no tool matched, continue conversation normally
+    print("🌀 [DEBUG] No matching tool or condition. Continuing conversation with LLM.")
     response = llm_with_tools.invoke(messages + [SystemMessage(content=system_prompt)])
     return {"messages": [response]}
-
-
-# System prompt for LLM
-system_prompt = f"""
-You are a helpful insurance assistant helping users file accident claims.
-Start by greeting the user.
-When the user mentions an accident or claim, politely ask for their phone number so you can fetch their policy details.
-Once phone number is provided, call the `get_policy_summary` tool to retrieve policy info. Wait for confirmation from user.
-If RSA is included in the policy, ask the user if they require towing or cab services.
-    
-    - ask for users a nearby location where the accident happened.
-    - send user a FTP link for a summary of accident with pictures or videos.
-    - create a ticket and send it to the user.
-    
-    Current state:
-    Phone Number: {state.get('phone_number', 'Not provided')}
-    Policy Number: {state.get('policy_number', 'Not provided')}
-    RSA: {state.get('rsa', 'Not provided')}
-    Accident Date: {state.get('accident_date', 'Not provided')}
-    Accident Time: {state.get('accident_time', 'Not provided')}
-    Accident Location: {state.get('accident_location', 'Not provided')}
-    Accident Details: {state.get('accident_details', 'Not provided')}
-    Towing Service: {state.get('towing_service', 'Not provided')}
-    Cab Service: {state.get('cab_service', 'Not provided')}
-    FTP Link: {state.get('ftp_link', 'Not provided')}
-    Accident Summary: {state.get('accident_summary', 'Not provided')}
-    Ticket Created: {state.get('ticket_created', False)}
-    Ticket ID: {state.get('ticket_id', 'Not provided')}
-    Awaiting Confirmation: {state.get('awaiting_confirmation', False)}
-
-    Rules:
-    1. Collect all required details (mobile number, policy number, RSA if needed, date, time) before creating a ticket. In fact, you can start by capturing the name and phone number and policy number.
-    2. After collecting all details via save_accident_details, present the scene recreation to the user for confirmation.
-    3. Only call create_fnol_ticket_tool after explicit user confirmation (e.g., 'yes' or 'confirm').
-    4. If user says 'no' or requests changes during confirmation, ask what to modify.
-    5. After successful ticket raising, ask if they need more help.
-    6. If asked about unrelated topics, politely refuse and redirect to ticket raising.
-    Current date: {datetime.now().strftime('%Y-%m-%d')}
-    """
-
-# Handle tickt raising response
-last_message = (
-    messages[-1].content.lower()
-    if messages and isinstance(messages[-1], HumanMessage)
-    else ""
-)
-if state.get("awaiting_confirmation", False):
-    if "yes" in last_message or "confirm" in last_message:
-        return {
-            "messages": [AIMessage(content="Great, I'll raise your ticket now...")],
-            "tool_calls": [{"name": "raise_ticket", "args": {"state": state}}],
-        }
-    elif "no" in last_message or "change" in last_message:
-        return {
-            "messages": [AIMessage(content="What would you like to change?")],
-            "awaiting_confirmation": False,
-        }
-    else:
-        return {
-            "messages": [
-                AIMessage(
-                    content="Please confirm with 'yes' or 'no', or let me know what to change."
-                )
-            ]
-        }
-
-response = llm_with_tools.invoke(messages + [SystemMessage(content=system_prompt)])
-return {"messages": [response]}
-
-##########################################
-
-
-#############################
 
 
 def run_conversation():
@@ -463,5 +534,75 @@ memory = MemorySaver()
 graph = builder.compile(checkpointer=memory)
 
 
+import logging
+logging.basicConfig(level=logging.DEBUG)
+logging.debug("Your debug message here")
+#####################################
+#FRONTEND
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from langchain_core.messages import HumanMessage
+import logging
+from typing import Optional
+
+app = FastAPI()
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+class ChatRequest(BaseModel):
+    message: str
+    thread_id: str
+    
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+class ChatRequest(BaseModel):
+    message: str
+    thread_id: Optional[str] = None
+@app.post("/api/chat")
+async def chat_endpoint(request: ChatRequest):
+    """Endpoint that connects Streamlit to LangGraph"""
+    try:
+        logger.debug(f"Received request: {request}")
+        
+        # Use provided thread_id or generate a new one
+        thread_id = request.thread_id or f"thread_{hash(request.message)}"
+        
+        # Create LangChain message
+        human_message = HumanMessage(content=request.message)
+        
+        # Prepare graph input
+        graph_input = {
+            "messages": [human_message],
+            "thread_id": thread_id
+        }
+        
+        # Invoke your graph
+        result = graph.invoke(
+            graph_input,
+            {"configurable": {"thread_id": thread_id}}
+        )
+        
+        # Extract response
+        last_message = result["messages"][-1]
+        
+        return {
+            "response": last_message.content,
+            "thread_id": thread_id,  # Return thread_id to client
+            "tool_calls": getattr(last_message, "tool_calls", None)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in chat_endpoint: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
-    run_conversation()
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+    

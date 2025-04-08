@@ -61,7 +61,7 @@ def create_ftp_directory(ticket_id):
 
 
 # API Endpoint to create an FNOL entry
-@app.post("/create_fnol/")
+@app.post("/create_fnol/",)
 def create_fnol_entry():
     try:
         data = request.get_json()
@@ -123,9 +123,11 @@ def create_fnol_entry():
         }
 
     except Exception as e:
+        import traceback
+        err = traceback.format_exc()
+        print("❌ Error in create_fnol_entry:", err)
         print("❌ Unexpected error:", str(e))
         return {"error": "Internal Server Error", "details": str(e)}, 500
 
-
 if __name__ == "__main__":
-    app.run(port=5000)
+    app.run(host="0.0.0.0", port=5050)
