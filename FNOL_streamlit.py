@@ -26,18 +26,28 @@ for message in st.session_state.messages:
 
 def process_message(user_input: str):
     """Send message to backend and handle response"""
+    print("📤 process_message called with:", user_input)
     try:
-        payload = {
-            "message": user_input,
-            "thread_id": st.session_state.thread_id
-        }
-        
+        # Debug print to console
+        print("\n=== Sending to backend ===")
+        print(f"URL: {BACKEND_API}/api/chat")
+        print("Payload:", {
+            'message': user_input,
+            'thread_id': st.session_state.thread_id
+        })
+
         response = requests.post(
             f"{BACKEND_API}/api/chat",
-            json=payload,
+            json={
+                "message": user_input,
+                "thread_id": st.session_state.thread_id
+            },
             timeout=30
         )
         
+        print(f"Response Status: {response.status_code}")
+        print(f"Response Body: {response.text}")
+
         if response.status_code != 200:
             return {
                 "error": f"Backend error {response.status_code}",
@@ -53,16 +63,18 @@ def process_message(user_input: str):
         return data
         
     except Exception as e:
+        print(f"!!! Request failed: {str(e)}")
         return {
             "error": "Connection error",
             "detail": str(e)
         }
 
 # Chat input
+print("📝 Waiting for user input...")
 if user_input := st.chat_input("Type your message here..."):
     # Add user message immediately
     st.session_state.messages.append({"role": "user", "content": user_input})
-    st.rerun()
+    
     
     # Process with backend
     with st.spinner("Processing..."):

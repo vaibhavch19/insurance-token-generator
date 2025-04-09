@@ -2,8 +2,20 @@ from typing import List, Dict, Optional, Annotated
 from typing_extensions import TypedDict
 from langchain_openai import ChatOpenAI
 from fastapi import FastAPI
-
+from fastapi import Request
 app = FastAPI()
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    print(f"\n[REQUEST] {request.method} {request.url}")
+    print(f"Headers: {dict(request.headers)}")
+    try:
+        body = await request.json()
+        print(f"Body: {body}")
+    except:
+        pass
+    
+    response = await call_next(request)
+    return response
 ##############################
 from typing import Dict, List, Optional, Annotated
 from typing_extensions import TypedDict
@@ -567,40 +579,47 @@ class ChatRequest(BaseModel):
     thread_id: Optional[str] = None
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
-    """Endpoint that connects Streamlit to LangGraph"""
+    """Enhanced with detailed logging"""
+    print(f"\n=== Received Request ===")
+    print(f"Message: {request.message}")
+    print(f"Thread ID: {request.thread_id}")
+
     try:
-        logger.debug(f"Received request: {request}")
-        
-        # Use provided thread_id or generate a new one
-        thread_id = request.thread_id or f"thread_{hash(request.message)}"
-        
         # Create LangChain message
         human_message = HumanMessage(content=request.message)
-        
+        print(f"Created HumanMessage: {human_message}")
+
         # Prepare graph input
+        thread_id = request.thread_id or f"thread_{hash(request.message)}"
         graph_input = {
             "messages": [human_message],
             "thread_id": thread_id
         }
-        
-        # Invoke your graph
+        print(f"Graph input: {graph_input}")
+
+        # Invoke graph
+        print("Invoking graph...")
         result = graph.invoke(
             graph_input,
             {"configurable": {"thread_id": thread_id}}
         )
-        
+        print(f"Graph result: {result}")
+
         # Extract response
         last_message = result["messages"][-1]
-        
-        return {
+        response = {
             "response": last_message.content,
-            "thread_id": thread_id,  # Return thread_id to client
-            "tool_calls": getattr(last_message, "tool_calls", None)
+            "thread_id": thread_id
         }
+        print(f"Returning response: {response}")
+        return response
         
     except Exception as e:
-        logger.error(f"Error in chat_endpoint: {str(e)}", exc_info=True)
+        print(f"ERROR in chat_endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+  
+
+
 
 if __name__ == "__main__":
     import uvicorn
