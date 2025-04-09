@@ -6,9 +6,8 @@ import operator
 import os
 import json
 import logging
-from config import FLASK_HOST, FLASK_PORT, UPLOAD_DIR, REPORT_DIR
+from config import FLASK_HOST, FLASK_PORT, UPLOAD_HOST, UPLOAD_PORT, REPORT_DIR
 from db_handler import get_policy_details, create_ticket
-from werkzeug.utils import secure_filename
 from langchain.prompts import PromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -49,7 +48,7 @@ parse_prompt = PromptTemplate(
 )
 report_prompt = PromptTemplate(
     input_variables=["accident_details", "ticket_id"],
-    template="Create a detailed claim summary and scene recreation for ticket {ticket_id} based on accident details: {accident_details}. Format as a concise report."
+    template="Create a detailed claim summary and scene recreation for ticket {ticket_id} based on accident details: {accident_details}. Format as a concise report. Note: Additional uploaded materials will be linked separately."
 )
 
 class State(TypedDict):
@@ -167,12 +166,12 @@ def raise_ticket(state):
         return updated_state
     
     ticket_id = create_ticket(state["mobile_number"], user_input)
-    upload_link = f"http://{FLASK_HOST}:{FLASK_PORT}/upload/{ticket_id}"
+    upload_link = f"http://{UPLOAD_HOST}:{UPLOAD_PORT}/upload/{ticket_id}"
     updated_state.update({
         "ticket_id": ticket_id,
         "upload_link": upload_link,
         "accident_details": user_input,
-        "messages": [f"Ticket #{ticket_id} is raised! You can upload photos or more details here: {upload_link}"],
+        "messages": [f"Ticket #{ticket_id} is raised! Please upload any photos or details here: {upload_link}"],
         "step": "generate_report"
     })
     app.logger.debug(f"raise_ticket state: {updated_state}")
@@ -198,7 +197,7 @@ def generate_report(state):
     report_link = f"http://{FLASK_HOST}:{FLASK_PORT}/static/reports/{ticket_id}_report.txt"
     updated_state.update({
         "report_link": report_link,
-        "messages": [f"Your report is ready: {report_link}"],
+        "messages": [f"Your initial report is ready: {report_link}"],
         "step": "end_conversation"
     })
     app.logger.debug(f"generate_report state: {updated_state}")
@@ -272,27 +271,12 @@ def respond():
         app.logger.error(f"Error in /respond: {str(e)}")
         return jsonify({"messages": [f"Server error: {str(e)}"], "state": state}), 500
 
-@app.route('/upload/<ticket_id>', methods=['POST'])
-def upload_files(ticket_id):
-    try:
-        os.makedirs(f"{UPLOAD_DIR}/{ticket_id}", exist_ok=True)
-        files = request.files.getlist("files")
-        uploaded = []
-        for file in files:
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(f"{UPLOAD_DIR}/{ticket_id}", filename))
-            uploaded.append(filename)
-        return jsonify({"message": f"Uploaded {len(uploaded)} files for ticket #{ticket_id}"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 @app.route('/static/<path:path>')
 def serve_static(path):
     return app.send_static_file(path)
 
 if __name__ == "__main__":
     from db_handler import init_db
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
     os.makedirs(REPORT_DIR, exist_ok=True)
     init_db()
     app.run(host=FLASK_HOST, port=FLASK_PORT, debug=True)
