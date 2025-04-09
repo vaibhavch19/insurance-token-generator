@@ -22,12 +22,12 @@ def summarize_image_with_gemini(uploaded_file):
         ])
         return response.text
     except Exception as e:
-        return f"❌ Gemini failed to summarize `{uploaded_file.name}`: {e}"
+        return f" Gemini failed to summarize `{uploaded_file.name}`: {e}"
 
 
 # App setup
 st.set_page_config(page_title="FNOL Chatbot", page_icon="🆘")
-st.title("🆘 FNOL Claims Assistant")
+st.title(" FNOL Claims Assistant")
 
 # Backend configuration
 BACKEND_API = "http://localhost:8000"
@@ -82,10 +82,10 @@ if user_input := st.chat_input("Type your message here..."):
             "role": "assistant",
             "content": assistant_msg
         })
-st.session_state.show_upload_option = True  # 👈 TEMP: Always show image upload section
+#st.session_state.show_upload_option = True  # TEMP: Always show image upload section
 # ✅ Inline image upload flow after FNOL ticket creation
 if st.session_state.get("show_upload_option"):
-    st.markdown("### 📤 Upload Images of the Accident")
+    st.markdown(" Upload Images of the Accident")
 
     uploaded_files = st.file_uploader(
         "Upload photos related to the accident (JPEG, PNG)",
@@ -102,6 +102,6 @@ if st.session_state.get("show_upload_option"):
                 summaries.append(f"**{file.name}** → {summary}")
 
         if summaries:
-            st.markdown("### 📝 AI Summary of Uploaded Images:")
+            st.markdown(" AI Summary sof Uploaded Images:")
             for summary in summaries:
                 st.success(summary)
