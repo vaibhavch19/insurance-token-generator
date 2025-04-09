@@ -7,7 +7,7 @@ st.set_page_config(page_title="FNOL Chatbot", page_icon="🆘")
 st.title("🆘 FNOL Claims Assistant")
 
 # Backend configuration
-BACKEND_API = "http://localhost:8000"
+BACKEND_API = "http://0.0.0.0:8000"
 
 # Session state initialization
 if "messages" not in st.session_state:
@@ -62,7 +62,8 @@ def process_message(user_input: str):
 if user_input := st.chat_input("Type your message here..."):
     # Add user message immediately
     st.session_state.messages.append({"role": "user", "content": user_input})
-    st.rerun()
+    # st.rerun()
+    print(user_input)
     
     # Process with backend
     with st.spinner("Processing..."):
