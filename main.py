@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional, Annotated
 from typing_extensions import TypedDict
-from langchain_openai import ChatOpenAI
+# from langchain_openai import ChatOpenAI
 from fastapi import FastAPI
 from fastapi import Request
 app = FastAPI()
@@ -23,9 +23,9 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import AnyMessage, add_messages
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_core.tools import tool
+from langchain_core.tools import tool, Tool
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_openai import AzureChatOpenAI
+# from langchain_openai import AzureChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 import requests
 from datetime import datetime
@@ -206,12 +206,6 @@ def raise_ticket(state: State) -> Dict:
         response.json() if response.status_code == 200 else {"error": "Booking failed"}
     )
     return result
-
-
-############
-import requests
-from typing import Dict
-from langchain.tools import Tool
 
 # Actual function to create the FNOL ticket with headers
 def create_fnol_ticket_raw(
