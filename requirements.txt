@@ -17,6 +17,7 @@ uvicorn[standard]
 # Miscellaneous Packages
 graphviz
 pdfplumber
+python-multipart
 
 # Packages for Frontend
 streamlit
