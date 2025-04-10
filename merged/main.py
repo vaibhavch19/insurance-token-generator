@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -14,9 +14,6 @@ import sqlite3
 import os
 import json
 import logging
-import google.generativeai as genai
-from PIL import Image
-import io
 import uuid
 
 # Setup logging
@@ -28,12 +25,9 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 # Configuration
 DB_PATH = "fnol.db"
-UPLOAD_DIR = "static/uploads"
+UPLOAD_PORT = 8502  # Port for the separate Streamlit upload app
 API_URL = "http://localhost:8000"
-
-# Initialize Gemini
-genai.configure(api_key="AIzaSyAs2IUf5H9I1m9GQ8flGoj0KmAAPCu5DIE")
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+UPLOAD_UI_URL = f"http://localhost:{UPLOAD_PORT}"
 
 # Initialize LLM
 llm = ChatGoogleGenerativeAI(
@@ -57,7 +51,6 @@ class State(BaseModel):
     upload_link: Optional[str] = None
     ticket_created: Optional[bool] = False
     awaiting_confirmation: Optional[bool] = False
-    image_summaries: Optional[List[str]] = None
 
 # Database Setup
 def init_db():
@@ -80,10 +73,10 @@ def init_db():
             accident_date_time TEXT,
             timestamp TEXT,
             status TEXT,
-            image_summaries TEXT
+            image_summaries TEXT,
+            report_link TEXT
         )
     """)
-    # Insert sample data
     cursor.execute("INSERT OR IGNORE INTO policies (phone_number, policy_number, rsa_available) VALUES (?, ?, ?)",
                    ("9876543210", "POLICY123", 1))
     conn.commit()
@@ -111,7 +104,7 @@ def get_policy_summary(phone_number: str) -> Dict:
 def create_fnol_ticket(phone_number: str, policy_number: str, location: str, accident_date_time: str) -> Dict:
     '''Raise a FNOL ticket using the user's phone number, policy number, accident location, and date-time'''
     ticket_id = str(uuid.uuid4())[:8]
-    upload_link = f"{API_URL}/upload/{ticket_id}"
+    upload_link = f"{UPLOAD_UI_URL}?ticket_id={ticket_id}"
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
@@ -135,7 +128,7 @@ def agent_node(state: State) -> Dict:
     3. Ask for accident details (date, time, location, description).
     4. Present summary for confirmation.
     5. Create ticket with create_fnol_ticket after confirmation.
-    6. Provide upload link and wait for images.
+    6. Provide upload link to a separate page for further processing.
     """
     messages = state.messages
     last_message = messages[-1].content.lower() if messages else ""
@@ -161,11 +154,8 @@ def agent_node(state: State) -> Dict:
             }]
         }
 
-    if state.ticket_created and state.upload_link and not state.image_summaries:
-        return {"messages": [AIMessage(content=f"Please upload images at {state.upload_link}")]}
-    
-    if state.image_summaries:
-        return {"messages": [AIMessage(content=f"Images summarized: {', '.join(state.image_summaries)}. All done!")]}
+    if state.ticket_created and state.upload_link:
+        return {"messages": [AIMessage(content=f"Ticket created! Please upload images and details [here]({state.upload_link}).")]}
 
     response = llm_with_tools.invoke(messages + [SystemMessage(content=system_prompt)])
     return {"messages": [response]}
@@ -194,48 +184,12 @@ async def chat_endpoint(request: ChatRequest):
     last_message = result["messages"][-1]
     return {"response": last_message.content, "thread_id": thread_id}
 
-@app.post("/upload/{ticket_id}")
-async def upload_files(ticket_id: str, files: List[UploadFile] = File(...)):
-    os.makedirs(f"{UPLOAD_DIR}/{ticket_id}", exist_ok=True)
-    summaries = []
-    for file in files:
-        file_path = os.path.join(f"{UPLOAD_DIR}/{ticket_id}", file.filename)
-        with open(file_path, "wb") as f:
-            f.write(await file.file.read())
-        summary = summarize_image(file_path)
-        summaries.append(summary)
-    
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE tickets SET image_summaries = ? WHERE ticket_id = ?", (json.dumps(summaries), ticket_id))
-    conn.commit()
-    conn.close()
-    
-    graph.update_state({"configurable": {"thread_id": thread_id}}, {"image_summaries": summaries})
-    return {"message": f"Uploaded and summarized {len(summaries)} files"}
-
-# Helper Functions
 def extract_phone_number(text: str) -> Optional[str]:
     import re
     match = re.search(r"\b\d{10}\b", text)
     return match.group(0) if match else None
 
-def summarize_image(file_path: str) -> str:
-    try:
-        image = Image.open(file_path)
-        image_bytes = io.BytesIO()
-        image.save(image_bytes, format="JPEG")
-        response = gemini_model.generate_content([
-            "Summarize the visible damage in this accident image for an insurance claim:",
-            {"mime_type": "image/jpeg", "data": image_bytes.getvalue()}
-        ])
-        return response.text
-    except Exception as e:
-        logger.error(f"Image summarization failed: {e}")
-        return f"Error summarizing image: {e}"
-
 if __name__ == "__main__":
     init_db()
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
