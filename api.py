@@ -117,6 +117,7 @@ def create_fnol_entry():
 
         # Success response
         print("✅ FNOL entry successfully created:", ticket_id)
+        upload_link = f"http://localhost:8501/image_summary_flow?ticket_id={ticket_id}"
         return {
             "message": "FNOL Entry Created",
             "ticket_id": ticket_id,
@@ -125,6 +126,7 @@ def create_fnol_entry():
             "location": location,
             "accident_date_time": accident_date_time,
             "ticket_date_time": ticket_date_time,
+            "upload_link": upload_link
         }
 
     except Exception as e:

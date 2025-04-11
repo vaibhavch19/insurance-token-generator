@@ -2,8 +2,8 @@ import pdfplumber
 import json
 import os
 import sqlite3  # or use your specific database module
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import SystemMessage, HumanMessage
+# from langchain.chat_models import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_community.utilities import SQLDatabase
 from langchain_google_genai import ChatGoogleGenerativeAI
 # import fitz  # PyMuPDF

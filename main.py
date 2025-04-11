@@ -3,12 +3,30 @@ from typing_extensions import TypedDict
 from fastapi import FastAPI
 from flask import Flask
 from flask_cors import CORS
+from fastapi import Request
+app = FastAPI()
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    print(f"\n[REQUEST] {request.method} {request.url}")
+    print(f"Headers: {dict(request.headers)}")
+    try:
+        body = await request.json()
+        print(f"Body: {body}")
+    except:
+        pass
+    
+    response = await call_next(request)
+    return response
+##############################
+from typing import Dict, List, Optional, Annotated
+from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import AnyMessage, add_messages
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
+from langchain_core.tools import tool, Tool
+# from langchain_openai import AzureChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 import requests
 import os
@@ -174,12 +192,6 @@ def raise_ticket(state: State) -> Dict:
         response.json() if response.status_code == 200 else {"error": "Booking failed"}
     )
     return result
-
-
-############
-import requests
-from typing import Dict
-from langchain.tools import Tool
 
 # Actual function to create the FNOL ticket with headers
 def create_fnol_ticket_raw(
@@ -541,43 +553,48 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 @app.post("/api/chat")
-def chat_endpoint():
-    """Endpoint that connects Streamlit to LangGraph"""
-    request = ChatRequest(**request.json())
-    
+async def chat_endpoint(request: ChatRequest):
+    """Enhanced with detailed logging"""
+    print(f"\n=== Received Request ===")
+    print(f"Message: {request.message}")
+    print(f"Thread ID: {request.thread_id}")
+
     try:
-        logger.debug(f"Received request: {request}")
-        
-        # Use provided thread_id or generate a new one
-        thread_id = request.thread_id or f"thread_{hash(request.message)}"
-        
         # Create LangChain message
         human_message = HumanMessage(content=request.message)
-        
+        print(f"Created HumanMessage: {human_message}")
+
         # Prepare graph input
+        thread_id = request.thread_id or f"thread_{hash(request.message)}"
         graph_input = {
             "messages": [human_message],
             "thread_id": thread_id
         }
-        
-        # Invoke your graph
+        print(f"Graph input: {graph_input}")
+
+        # Invoke graph
+        print("Invoking graph...")
         result = graph.invoke(
             graph_input,
             {"configurable": {"thread_id": thread_id}}
         )
-        
+        print(f"Graph result: {result}")
+
         # Extract response
         last_message = result["messages"][-1]
-        
-        return {
+        response = {
             "response": last_message.content,
-            "thread_id": thread_id,  # Return thread_id to client
-            "tool_calls": getattr(last_message, "tool_calls", None)
+            "thread_id": thread_id
         }
+        print(f"Returning response: {response}")
+        return response
         
     except Exception as e:
-        logger.error(f"Error in chat_endpoint: {str(e)}", exc_info=True)
+        print(f"ERROR in chat_endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+  
+
+
 
 if __name__ == "__main__":
     run_conversation()
