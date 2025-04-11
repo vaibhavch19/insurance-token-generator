@@ -4,7 +4,6 @@ langchain
 langchain-community
 langchain-openai
 langchain-google-genai
-google-generativeai
 langfuse
 
 # Packages for API
@@ -18,7 +17,6 @@ uvicorn[standard]
 # Miscellaneous Packages
 graphviz
 pdfplumber
-python-multipart
 
 # Packages for Frontend
 streamlit

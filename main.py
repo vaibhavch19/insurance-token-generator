@@ -1,7 +1,8 @@
 from typing import List, Dict, Optional, Annotated
 from typing_extensions import TypedDict
-# from langchain_openai import ChatOpenAI
 from fastapi import FastAPI
+from flask import Flask
+from flask_cors import CORS
 from fastapi import Request
 app = FastAPI()
 @app.middleware("http")
@@ -23,23 +24,20 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import AnyMessage, add_messages
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langchain_core.tools import tool, Tool
-from langchain_core.messages import AIMessage, HumanMessage
 # from langchain_openai import AzureChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 import requests
-from datetime import datetime
 import os
+import json
 from dotenv import load_dotenv
-from langchain_core.messages import SystemMessage
+from datetime import datetime
+from summarizer import summarize_insurance_by_phone
 
 load_dotenv()
-###############
-from summarizer import summarize_insurance_by_phone
-import json
 
-API_URL = "http://localhost:5050"
-
+API_URL = 'http://127.0.0.1:5000/api'
 
 # ========== STATE ==========
 class State(TypedDict):
@@ -64,7 +62,6 @@ class State(TypedDict):
     awaiting_confirmation: Optional[bool]
     # New flag to track confirmation state
 
-
 # ========== LLM ==========
 # llm = AzureChatOpenAI(
 #     api_key=os.getenv('AZURE_OPENAI_API_KEY'),
@@ -72,48 +69,40 @@ class State(TypedDict):
 #     azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT'),
 #     temperature=0.7
 # )
-# llm = ChatOpenAI(model_name="gpt-4o", openai_api_key="320858c52dcd4d0a87c913604e16d562")
+
 llm = ChatGoogleGenerativeAI(
-    api_key="AIzaSyAs2IUf5H9I1m9GQ8flGoj0KmAAPCu5DIE",
-    model="gemini-1.5-flash",
+    api_key=os.getenv('GOOGLE_GENERATIVE_API_KEY'),
+    model='gemini-1.5-flash',
     temperature=0.7,
     max_tokens=100,
 )
-
 
 # ========== TOOLS ==========
 @tool
 def get_policy_summary(phone_number: str) -> dict:
     """Fetch policy details using the user's phone number"""
-    try:
-        summary_str = summarize_insurance_by_phone(phone_number)
-        summary = json.loads(summary_str)
-        print(f"✅ [DEBUG] Parsed summary: {summary}")
-
-        # Return both the display string and updateable state values
+    try: 
+        response = requests.get(f"{API_URL}/policy-summary/{phone_number}")
+        summary = response.json() if response.status_code == 200 else {}
+        
         return {
-            "message": f"""
-Here are your policy details:
+                "message": f"""Here are your policy details:
 
-• Policy Number: {summary["policy_number"]}
-• Policy Type: {summary["policy_type"]}
-• Validity: {summary["policy_valid"]}
-• Deductible: {summary["deductible"]}
-• Liability: {summary["liability_amount"]}
-• RSA: {summary["RSA"]}
-• Other Claims: {", ".join(summary["other_claims"]) if "other_claims" in summary else "None"}
+- Policy Number: {summary.get("policy_number")}
+- Policy Type: {summary.get("policy_type")}
+- Validity: {summary.get("policy_valid")}
+- Deductible: {summary.get("deductible")}
+- Liability: {summary.get("liability_amount")}
+- RSA: {summary.get("RSA")}
+- Other Claims: {", ".join(summary.get("other_claims")) if "other_claims" in summary else "None"}
 
-Please confirm if these details are correct.
-""",
-            "policy_number": summary["policy_number"],
-            "rsa": summary["RSA"]
-        }
+Please confirm if these details are correct.""",
+                "policy_number": summary.get("policy_number"),
+                "rsa": summary.get("RSA")
+            }
+    
     except Exception as e:
-        return {
-            "message": f"❌ Error fetching policy summary: {e}",
-            "error": str(e)
-        }
-
+        return {"message": f"❌ Error fetching policy summary: {e}"}, 500
 
 @tool
 def fetch_RSA_details(policy_number: str) -> Dict:
@@ -134,9 +123,8 @@ def fetch_RSA_details(policy_number: str) -> Dict:
 #         'name': name,
 #         'age': age,
 #         'date': date,
-
-
 #     }
+
 @tool
 def collect_accident_details(date_time: str, location: str, description: str) -> dict:
     """
@@ -147,7 +135,6 @@ def collect_accident_details(date_time: str, location: str, description: str) ->
         "location": location,
         "accident_description": description,
     }
-
 
 @tool
 def create_fnol(
@@ -161,7 +148,6 @@ def create_fnol(
         "ticket_date_time": True,
         "accident_summary": True,
     }
-
 
 @tool
 def raise_ticket(state: State) -> Dict:
@@ -270,7 +256,6 @@ def extract_phone_number(text: str) -> Optional[str]:
 
 ############################
 def agent_node(state: State) -> Dict:
-    
     print("🧠 [DEBUG] agent_node called with state:")
     print(json.dumps(state, indent=2, default=str))
     messages = state["messages"]
@@ -525,7 +510,6 @@ def run_conversation():
 
 import requests
 
-
 # ========== GRAPH ==========
 builder = StateGraph(State)
 builder.add_node("agent", agent_node)
@@ -568,9 +552,6 @@ class ChatRequest(BaseModel):
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-class ChatRequest(BaseModel):
-    message: str
-    thread_id: Optional[str] = None
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
     """Enhanced with detailed logging"""
@@ -616,6 +597,6 @@ async def chat_endpoint(request: ChatRequest):
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-    
+    run_conversation()
+    # import uvicorn
+    # uvicorn.run(app, host="0.0.0.0", port=8000)

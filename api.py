@@ -21,12 +21,17 @@ def get_policy_summary(phone_number):
     try:
         summary = summarize_insurance_by_phone(phone_number)
         return summary
+    
     except Exception as e:
-        return {"error": "Failed to fetch policy summary", "details": str(e)}
+        return {"error": f"Failed to fetch policy summary.\n{str(e)}"}, 500
+
+@app.get('/api/fetch-rsa-details/<phone_number>')
+def fetch_rsa_details(phone_number):
+    
 
 
 @app.post("/api/raise_ticket")
-async def raise_ticket(data: dict):
+def raise_ticket(data: dict):
     """Submit a ticket with policy ID and incident details"""
     try:
         policy_id = data.get("policyId")
@@ -132,4 +137,4 @@ def create_fnol_entry():
         return {"error": "Internal Server Error", "details": str(e)}, 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5050)
+    app.run()

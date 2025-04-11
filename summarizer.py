@@ -7,6 +7,9 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_community.utilities import SQLDatabase
 from langchain_google_genai import ChatGoogleGenerativeAI
 # import fitz  # PyMuPDF
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 # Initialize the LLM
@@ -120,13 +123,12 @@ def summarize_insurance_by_phone(phone_number):
 
         # Safely parse to ensure it's valid JSON
         data = json.loads(response)
-        return json.dumps(data)
+        return data
 
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return {"error": str(e)}, 500
 
 
 if __name__ == "__main__":
     phone = input("Enter client phone number: ")
     print(summarize_insurance_by_phone(phone))
-
