@@ -38,14 +38,13 @@ if "messages" not in st.session_state:
         "role": "assistant",
         "content": "Hello! I'm here to help with your insurance claim. Could you please share what happened?"
     }]
-
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = None
+if "user_input" not in st.session_state:
+    st.session_state.user_input = ""
+if "trigger_send" not in st.session_state:
+    st.session_state.trigger_send = False
 
-# Display chat history
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
 
 def process_message(user_input: str):
     try:
@@ -63,8 +62,21 @@ def process_message(user_input: str):
     except Exception as e:
         return {"error": "Connection error", "detail": str(e)}
 
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.write(message["content"])
 # Chat input
-if user_input := st.chat_input("Type your message here..."):
+user_input = st.chat_input("Type your message here...")
+if user_input:
+    st.session_state.user_input = user_input
+    st.session_state.trigger_send = True
+    st.rerun()
+#st.session_state.show_upload_option = True  # TEMP: Always show image upload section
+# ✅ Inline image upload flow after FNOL ticket creation
+#################
+if st.session_state.trigger_send:
+    user_input = st.session_state.user_input
     st.session_state.messages.append({"role": "user", "content": user_input})
 
     with st.spinner("Processing..."):
@@ -82,8 +94,13 @@ if user_input := st.chat_input("Type your message here..."):
             "role": "assistant",
             "content": assistant_msg
         })
-#st.session_state.show_upload_option = True  # TEMP: Always show image upload section
-# ✅ Inline image upload flow after FNOL ticket creation
+
+    # Reset send trigger
+    st.session_state.trigger_send = False
+    st.rerun()
+
+
+################
 if st.session_state.get("show_upload_option"):
     st.markdown(" Upload Images of the Accident")
 
