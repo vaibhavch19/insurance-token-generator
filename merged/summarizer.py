@@ -4,9 +4,12 @@ import os
 import sqlite3
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 llm = ChatGoogleGenerativeAI(
-    api_key="AIzaSyAs2IUf5H9I1m9GQ8flGoj0KmAAPCu5DIE",
+    api_key=os.getenv('GOOGLE_GENERATIVE_API_KEY'),
     model="gemini-1.5-flash",
     temperature=0.7,
     max_tokens=100

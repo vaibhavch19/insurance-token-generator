@@ -16,6 +16,9 @@ import os
 import json
 import logging
 import uuid
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -35,7 +38,7 @@ UPLOAD_UI_URL = f"http://localhost:{UPLOAD_PORT}"
 
 # Initialize LLM
 llm = ChatGoogleGenerativeAI(
-    api_key="AIzaSyAs2IUf5H9I1m9GQ8flGoj0KmAAPCu5DIE",
+    api_key=os.getenv('GOOGLE_GENERATIVE_API_KEY'),
     model="gemini-1.5-flash",
     temperature=0.7,
     max_tokens=100,

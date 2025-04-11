@@ -5,6 +5,9 @@ import io
 import os
 import sqlite3
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configuration
 DB_PATH = "fnol.db"
@@ -79,7 +82,7 @@ def generate_report(ticket_id: str) -> str:
     
 
 # Initialize Gemini
-genai.configure(api_key="AIzaSyAs2IUf5H9I1m9GQ8flGoj0KmAAPCu5DIE")
+genai.configure(api_key=os.getenv("GOOGLE_GENERATIVE_API_KEY"))
 gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 
 st.set_page_config(page_title="Upload Accident Details", page_icon="📷")
