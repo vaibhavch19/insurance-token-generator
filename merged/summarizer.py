@@ -56,11 +56,15 @@ def summarize_insurance_by_phone(phone_number):
         Policy Text:
         {policy_text}
         """
-        messages = [SystemMessage(content="You are a helpful assistant extracting insurance details."), HumanMessage(content=prompt)]
+        messages = [
+            SystemMessage(content="You are a helpful assistant extracting insurance details."),
+            HumanMessage(content=prompt)
+        ]
         response = llm.invoke(messages).content.strip()
         if response.startswith("```json"):
             response = response.removeprefix("```json").removesuffix("```").strip()
         data = json.loads(response)
         return data
+    
     except Exception as e:
         return {"error": str(e)}

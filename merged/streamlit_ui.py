@@ -12,16 +12,22 @@ if "messages" not in st.session_state:
         "role": "assistant",
         "content": "Hello! I'm here to help with your insurance claim. Could you please share what happened?"
     }]
+
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
+
 if "user_input" not in st.session_state:
     st.session_state.user_input = ""
+
 if "trigger_send" not in st.session_state:
     st.session_state.trigger_send = False
 
 
 def process_message(user_input: str):
-    payload = {"message": user_input, "thread_id": st.session_state.thread_id}
+    payload = {
+        "message": user_input,
+        "thread_id": st.session_state.thread_id
+    }
     response = requests.post(f"{BACKEND_API}/api/chat", json=payload, timeout=30)
     if response.status_code != 200:
         st.error(f"Backend error: {response.text}")
@@ -33,7 +39,10 @@ for message in st.session_state.messages:
 
 
 if user_input := st.chat_input("Type your message..."):
-    st.session_state.messages.append({"role": "user", "content": user_input})
+    st.session_state.messages.append({
+        "role": "user",
+        "content": user_input
+    })
     with st.spinner("Processing..."):
         result = process_message(user_input)
     if result:

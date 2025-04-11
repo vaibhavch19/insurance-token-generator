@@ -27,9 +27,11 @@ def summarize_image(file_path: str) -> str:
             
             Give your output as only a string without any markdown characters or formatting.
             """,
-            {"mime_type": "image/jpeg", "data": image_bytes.getvalue()}
+            {
+                "mime_type": "image/jpeg",
+                "data": image_bytes.getvalue()
+            }
         ])
-        print(response.text)
         return response.text
     
     except Exception as e:
@@ -98,7 +100,11 @@ if not ticket_id:
 st.markdown(f"**Ticket ID:** `{ticket_id}`")
 
 # Upload Section
-uploaded_files = st.file_uploader("Upload photos (JPEG, PNG)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+uploaded_files = st.file_uploader(
+    "Upload photos (JPEG, PNG)",
+    type=["jpg", "jpeg", "png"],
+    accept_multiple_files=True
+)
 additional_text = st.text_area("Add any additional details about the accident")
 
 if uploaded_files or additional_text:
@@ -118,8 +124,6 @@ if uploaded_files or additional_text:
             # Add text summary if provided
             if additional_text:
                 summaries.append(f"User Notes: {additional_text}")
-            
-            print(summaries)
             
             # Update database
             conn = sqlite3.connect(DB_PATH)

@@ -25,10 +25,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 # Mount static files for report serving
-app.mount("/static", StaticFiles(directory="static/reports"), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory="static/reports"),
+    name="static"
+)
 
 # Configuration
 DB_PATH = "fnol.db"
@@ -58,6 +68,8 @@ class State(BaseModel):
     upload_link: Optional[str] = None
     ticket_created: Optional[bool] = False
     awaiting_confirmation: Optional[bool] = False
+    tow_request_availed: Optional[bool] = None
+    cab_request_availed: Optional[bool] = None
 
 # Database Setup
 def init_db():
@@ -85,7 +97,7 @@ def init_db():
         )
     """)
     cursor.execute("INSERT OR IGNORE INTO policies (phone_number, policy_number, rsa_available) VALUES (?, ?, ?)",
-                   ("9876543210", "POLICY123", 1))
+                   ("9876543210", "123/policy/456/72003", 1))
     conn.commit()
     conn.close()
 
@@ -120,7 +132,11 @@ def create_fnol_ticket(phone_number: str, policy_number: str, location: str, acc
     """, (ticket_id, phone_number, policy_number, location, accident_date_time, datetime.now().isoformat()))
     conn.commit()
     conn.close()
-    return {"ticket_id": ticket_id, "upload_link": upload_link, "ticket_created": True}
+    return {
+        "ticket_id": ticket_id,
+        "upload_link": upload_link,
+        "ticket_created": True
+    }
 
 tools = [get_policy_summary, create_fnol_ticket]
 llm_with_tools = llm.bind_tools(tools)
@@ -142,30 +158,62 @@ def agent_node(state: State) -> Dict:
 
     if not state.phone_number:
         if phone_number := extract_phone_number(last_message):
-            return {"phone_number": phone_number, "tool_calls": [{"name": "get_policy_summary", "args": {"phone_number": phone_number}}]}
-        return {"messages": [AIMessage(content="Please provide your registered phone number.")]}
+            return {
+                "phone_number": phone_number,
+                "tool_calls": [{
+                    "name": "get_policy_summary",
+                    "args": {
+                        "phone_number": phone_number
+                    }
+                }]
+            }
+        
+        return {
+            "messages": [AIMessage(content="Please provide your registered phone number.")]
+        }
 
     if state.policy_number and not state.accident_location:
-        return {"messages": [AIMessage(content="Please provide the accident location, date, time, and details.")]}
+        return {
+            "messages": [AIMessage(content="Please provide the accident location, date, time, and details.")]
+        }
     
-    if all([state.accident_location, state.accident_date, state.accident_time, state.accident_details]) and not state.ticket_created:
+    if all([
+        state.accident_location,
+        state.accident_date,
+        state.accident_time,
+        state.accident_details
+    ]) and not state.ticket_created:
         summary = f"Confirm: Phone: {state.phone_number}, Policy: {state.policy_number}, Location: {state.accident_location}, Date: {state.accident_date}, Time: {state.accident_time}, Details: {state.accident_details}"
-        return {"messages": [AIMessage(content=summary)], "awaiting_confirmation": True}
+        
+        return {
+            "messages": [AIMessage(content=summary)],
+            "awaiting_confirmation": True
+        }
 
     if state.awaiting_confirmation and ("yes" in last_message or "confirm" in last_message):
         accident_date_time = f"{state.accident_date} {state.accident_time}"
+        
         return {
             "tool_calls": [{
                 "name": "create_fnol_ticket",
-                "args": {"phone_number": state.phone_number, "policy_number": state.policy_number, "location": state.accident_location, "accident_date_time": accident_date_time}
+                "args": {
+                    "phone_number": state.phone_number,
+                    "policy_number": state.policy_number,
+                    "location": state.accident_location,
+                    "accident_date_time": accident_date_time
+                }
             }]
         }
 
     if state.ticket_created and state.upload_link:
-        return {"messages": [AIMessage(content=f"Ticket created! Please upload images and details [here]({state.upload_link}).")]}
+        return {
+            "messages": [AIMessage(content=f"Ticket created! Please upload images and details [here]({state.upload_link}).")]
+        }
 
     response = llm_with_tools.invoke(messages + [SystemMessage(content=system_prompt)])
-    return {"messages": [response]}
+    return {
+        "messages": [response]
+    }
 
 # Graph Setup
 builder = StateGraph(State)
@@ -187,9 +235,16 @@ async def chat_endpoint(request: ChatRequest):
     logger.info(f"Received chat request: {request.message}")
     human_message = HumanMessage(content=request.message)
     thread_id = request.thread_id or str(uuid.uuid4())
-    result = graph.invoke({"messages": [human_message]}, {"configurable": {"thread_id": thread_id}})
+    result = graph.invoke(
+        {"messages": [human_message]},
+        {"configurable": {"thread_id": thread_id}}
+    )
     last_message = result["messages"][-1]
-    return {"response": last_message.content, "thread_id": thread_id}
+    
+    return {
+        "response": last_message.content,
+        "thread_id": thread_id
+    }
 
 def extract_phone_number(text: str) -> Optional[str]:
     import re
