@@ -49,6 +49,7 @@ def summarize_insurance_by_phone(phone_number):
           "liability_amount": "Rs. 750000",
           "RSA": "Yes"
         }}
+        
         Policy Text:
         {policy_text}
         """
@@ -57,6 +58,6 @@ def summarize_insurance_by_phone(phone_number):
         if response.startswith("```json"):
             response = response.removeprefix("```json").removesuffix("```").strip()
         data = json.loads(response)
-        return json.dumps(data)
+        return data
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return {"error": str(e)}

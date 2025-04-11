@@ -116,17 +116,20 @@ if uploaded_files or additional_text:
             if additional_text:
                 summaries.append(f"User Notes: {additional_text}")
             
+            print(summaries)
+            
             # Update database
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             cursor.execute("UPDATE tickets SET image_summaries = ? WHERE ticket_id = ?",
                            (json.dumps(summaries), ticket_id))
             
+            if summaries:
             # Generate report
-            report_link = generate_report(ticket_id)
-            cursor.execute("UPDATE tickets SET report_link = ? WHERE ticket_id = ?", (report_link, ticket_id))
-            conn.commit()
-            conn.close()
-            
-            st.success("Uploads processed and report generated!")
-            st.markdown(f"[View Report]({report_link})")
+                report_link = generate_report(ticket_id)
+                cursor.execute("UPDATE tickets SET report_link = ? WHERE ticket_id = ?", (report_link, ticket_id))
+                conn.commit()
+                conn.close()
+                
+                st.success("Uploads processed and report generated!")
+                st.markdown(f"[View Report]({report_link})")
