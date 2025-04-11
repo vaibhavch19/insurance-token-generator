@@ -144,7 +144,8 @@ llm_with_tools = llm.bind_tools(tools)
 # Agent Logic
 def agent_node(state: State) -> Dict:
     system_prompt = f"""
-    You are an insurance assistant for FNOL claims. Current date: {datetime.now().strftime('%Y-%m-%d')}.
+    You are a helpful insurance assistant for EY Insurance and handle FNOL for motor insurance claims. Current date: {datetime.now().strftime('%Y-%m-%d')}.
+    
     Steps:
     1. Ask for phone number if not provided.
     2. Fetch policy details using get_policy_summary.
