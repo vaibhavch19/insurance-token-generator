@@ -11,8 +11,7 @@ load_dotenv()
 llm = ChatGoogleGenerativeAI(
     api_key=os.getenv('GOOGLE_GENERATIVE_API_KEY'),
     model="gemini-1.5-flash",
-    temperature=0.7,
-    max_tokens=100
+    temperature=0.7
 )
 
 def get_pdf_path_from_phone(phone_number):
@@ -38,33 +37,46 @@ def summarize_insurance_by_phone(phone_number):
         prompt = f"""
         Extract the following fields from the motor insurance text and respond with valid JSON only:
         - policy_number
-        - policy_type
-        - policy_valid
+        - policy_type ("Comprehensive" or "Third-Party")
+        - policy_start_date
+        - policy_end_date
         - deductible
         - liability_amount
-        - RSA
+        - RSA (available or not)
+        
         Example:
-        {{
           "policy_number": "XXXXXX",
           "policy_type": "Comprehensive",
-          "policy_valid": "Valid",
-          "deductible": "Rs. 2000",
-          "liability_amount": "Rs. 750000",
-          "RSA": "Yes"
-        }}
+          "policy_start_date": "DD-MM-YYYY",
+          "policy_end_date": "DD-MM-YYYY",
+          "deductible": "Rs. XX,XX,XXX.XX",
+          "liability_amount": "Rs. XX,XX,XXX.XX",
+          "rsa": True or False
         
         Policy Text:
         {policy_text}
+        
+        Your response should just be the JSON string without any markdown formatting.
         """
         messages = [
             SystemMessage(content="You are a helpful assistant extracting insurance details."),
             HumanMessage(content=prompt)
         ]
         response = llm.invoke(messages).content.strip()
+        print(f'{response = }')
         if response.startswith("```json"):
             response = response.removeprefix("```json").removesuffix("```").strip()
         data = json.loads(response)
         return data
     
     except Exception as e:
-        return {"error": str(e)}
+        # return {"error": str(e)}
+        print(e)
+    
+def main():
+    phone_number = input("Enter the phone number: ")
+    data = summarize_insurance_by_phone(phone_number)
+    print(json.dumps(data, indent=4))
+    
+if __name__ == '__main__':
+    main()
