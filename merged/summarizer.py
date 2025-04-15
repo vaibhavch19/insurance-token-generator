@@ -68,3 +68,11 @@ def summarize_insurance_by_phone(phone_number):
     
     except Exception as e:
         return {"error": str(e)}
+    
+def main():
+    phone_number = input("Enter the phone number: ")
+    summary = summarize_insurance_by_phone(phone_number)
+    print(json.dumps(summary, indent=2))
+
+if __name__ == "__main__":
+    main()

@@ -1,8 +1,6 @@
 from typing import List, Dict, Optional, Annotated
 from typing_extensions import TypedDict
 from fastapi import FastAPI
-from flask import Flask
-from flask_cors import CORS
 from fastapi import Request
 app = FastAPI()
 @app.middleware("http")
@@ -37,7 +35,7 @@ from summarizer import summarize_insurance_by_phone
 
 load_dotenv()
 
-API_URL = 'http://127.0.0.1:5000/api'
+API_URL = 'http://127.0.0.1:5050/api'
 
 # ========== STATE ==========
 class State(TypedDict):
@@ -74,7 +72,7 @@ llm = ChatGoogleGenerativeAI(
     api_key=os.getenv('GOOGLE_GENERATIVE_API_KEY'),
     model='gemini-1.5-flash',
     temperature=0.7,
-    max_tokens=100,
+    
 )
 
 # ========== TOOLS ==========
@@ -102,7 +100,7 @@ Please confirm if these details are correct.""",
             }
     
     except Exception as e:
-        return {"message": f"❌ Error fetching policy summary: {e}"}, 500
+        return {"message": f"❌ Error fetching policy summary: {e}"}
 
 @tool
 def fetch_RSA_details(policy_number: str) -> Dict:
@@ -115,15 +113,6 @@ def fetch_RSA_details(policy_number: str) -> Dict:
     )
     return {"rsa_details": rsa_details}
 
-
-# @tool
-# def raise_ticket(name: str, age: int, date: str, slot: str) -> Dict:
-#     '''Save ticket details'''
-#     return {
-#         'name': name,
-#         'age': age,
-#         'date': date,
-#     }
 
 @tool
 def collect_accident_details(date_time: str, location: str, description: str) -> dict:
@@ -295,7 +284,8 @@ def agent_node(state: State) -> Dict:
         3. Only call create_fnol_ticket_tool after explicit user confirmation (e.g., 'yes' or 'confirm').
         4. If user says 'no' or requests changes during confirmation, ask what to modify.
         5. After successful ticket raising, ask if they need more help.
-        6. If asked about unrelated topics, politely refuse and redirect to ticket raising.
+        6. Provide upload link to a separate page for further processing.
+        7. If asked about unrelated topics, politely refuse and redirect to ticket raising.
         Current date: {datetime.now().strftime('%Y-%m-%d')}
         """
     last_message = (
@@ -303,10 +293,37 @@ def agent_node(state: State) -> Dict:
             if messages and isinstance(messages[-1], HumanMessage)
             else ""
         )
+    # 🟡 If all accident details are present and awaiting confirmation
+    if (
+        state.get("accident_date") and
+        state.get("accident_time") and
+        state.get("accident_location") and
+        state.get("accident_details") and
+        not state.get("ticket_created") and
+        not state.get("create_fnol_ticket_tool") and
+        state.get("awaiting_confirmation")
+    ):
+        if "yes" in last_message or "confirm" in last_message:
+            return {
+            "state": {
+                **state,
+                "awaiting_confirmation": False,  # Reset confirmation flag
+            },
+            "messages": [
+                AIMessage(content="✅ Got your confirmation! Creating your FNOL ticket now...")
+            ],
+            "next": "create_fnol_ticket_tool",  # ✅ Triggers ticket creation tool
+        }
+    elif "no" in last_message:
+        return {
+            "messages": [
+                AIMessage(content="❌ Okay, what would you like to change before creating the ticket?")
+            ]
+        }
 
     # 💡 Handle returned FNOL ticket creation result
-    ticket_result = state.get("tool_results", {}).get("create_fnol_ticket_tool")
-    
+    ticket_result = state.get("create_fnol_ticket_tool")
+    # Check if the ticket was created successfully    
     if ticket_result:
         if ticket_result.get("ticket_created"):
             return {
@@ -332,7 +349,7 @@ def agent_node(state: State) -> Dict:
                     AIMessage(content="❌ Failed to create the FNOL ticket. Please try again later.")
                 ]
             }
-    policy_result = state.get("tool_results", {}).get("get_policy_summary")
+    policy_result = state.get("get_policy_summary")
     if policy_result:
         try:
             # Extract from the text using regex
@@ -367,10 +384,10 @@ def agent_node(state: State) -> Dict:
                 "state": {
                     **state,
                     "phone_number": extracted_phone,
-                },
+                }
             }
 
-
+    
     # Step 1: If we have phone number but no policy number, fetch policy
     if state.get("phone_number") and not state.get("policy_number"):
         return {
@@ -384,7 +401,16 @@ def agent_node(state: State) -> Dict:
                 }
             ],
         }
-    if state.get("rsa") is True and not state.get("towing_service"):
+    if state.get("policy_summary") and not state.get("confirmed_policy"):
+        return {
+            "messages": [
+                AIMessage(content=f"Here are your policy details:\n\n{state['policy_summary']}")
+            ],
+            "updates": {
+                "confirmed_policy": True
+            }
+        }   
+    if state.get("Road side Assistance") is True and not state.get("towing_service"):
         return {
         "messages": [
             AIMessage(content="Your policy includes RSA. Do you need a towing service or a cab service?")
@@ -430,21 +456,23 @@ def agent_node(state: State) -> Dict:
     if all(state.get(field) for field in required_fields) and not state.get("ticket_created"):
         summary = f"""
 Before we proceed, please confirm the following accident details:
-- 📞 Phone: {state['phone_number']}
-- 🪪 Policy: {state['policy_number']}
-- 📍 Location: {state['accident_location']}
-- 📅 Date: {state['accident_date']}
-- ⏰ Time: {state['accident_time']}
-- 📝 Description: {state['accident_details']}
+-  Phone: {state['phone_number']}
+-  Policy: {state['policy_number']}
+-  Location: {state['accident_location']}
+-  Date: {state['accident_date']}
+-  Time: {state['accident_time']}
+-  Description: {state['accident_details']}
 
 Shall I go ahead and create the ticket?
 """
+        
         return {
             "messages": [AIMessage(content=summary)],
             "state": {**state, "awaiting_confirmation": True},
         }
 
     # Step 4: If user already confirmed and all data is there, create FNOL ticket
+    
     if (
         state.get("phone_number")
         and state.get("policy_number")
@@ -527,6 +555,8 @@ graph = builder.compile(checkpointer=memory)
 import logging
 logging.basicConfig(level=logging.DEBUG)
 logging.debug("Your debug message here")
+
+#
 #####################################
 #FRONTEND
 from fastapi import FastAPI, HTTPException

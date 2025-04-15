@@ -41,7 +41,7 @@ app.mount(
 )
 
 # Configuration
-DB_PATH = "fnol.db"
+DB_PATH = "FNOL_TICKETS.db"
 UPLOAD_PORT = 8502  # Port for the separate Streamlit upload app
 API_URL = "http://localhost:8000"
 UPLOAD_UI_URL = f"http://localhost:{UPLOAD_PORT}"
@@ -79,7 +79,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS policies (
             phone_number TEXT PRIMARY KEY,
             policy_number TEXT,
-            rsa_available INTEGER
+            rsa_available INTEGER,
+            
         )
     """)
     cursor.execute("""
@@ -147,11 +148,11 @@ def agent_node(state: State) -> Dict:
     You are a helpful insurance assistant for EY Insurance and handle FNOL for motor insurance claims. Current date: {datetime.now().strftime('%Y-%m-%d')}.
     
     Steps:
-    1. Ask for phone number if not provided.
-    2. Fetch policy details using get_policy_summary.
+    1. Greet the user firmly and ask for their registered phone number.
+    2. Fetch policy details using get_policy_summary and show the policy number and RSA availability.
     3. Ask for accident details (date, time, location, description).
     4. Present summary for confirmation.
-    5. Create ticket with create_fnol_ticket after confirmation.
+    5. Create ticket with create_fnol_ticket after confirmation. 
     6. Provide upload link to a separate page for further processing.
     """
     messages = state.messages
@@ -170,7 +171,7 @@ def agent_node(state: State) -> Dict:
             }
         
         return {
-            "messages": [AIMessage(content="Please provide your registered phone number.")]
+            "messages": [AIMessage(content="Please provide your registered phone number for me to fetch policy details.")]
         }
 
     if state.policy_number and not state.accident_location:

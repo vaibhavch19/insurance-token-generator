@@ -1,33 +1,62 @@
-from flask import Flask, request
-from flask_cors import CORS
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 import sqlite3
 from pydantic import BaseModel
 from uuid import uuid4
 from datetime import datetime
-import requests
-import json
 import os
-import uvicorn
 from summarizer import summarize_insurance_by_phone
 
+app = FastAPI()
 
-app = Flask(__name__)
-CORS(app)
-
-
-@app.get("/api/policy-summary/<phone_number>")
-def get_policy_summary(phone_number):
-    print(f"Received phone number: {phone_number}")
+@app.get("/api/policy-summary/{phone_number}")
+def get_policy_summary(phone_number: str):
+    print(f"📞 Received phone number: {phone_number}")
     try:
         summary = summarize_insurance_by_phone(phone_number)
         return summary
-    
     except Exception as e:
-        return {"error": f"Failed to fetch policy summary.\n{str(e)}"}, 500
+        print("❌ Error fetching policy summary:", str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to fetch policy summary: {str(e)}")
 
 @app.get('/api/fetch-rsa-details/<phone_number>')
 def fetch_rsa_details(phone_number):
-    
+    try:
+        conn = sqlite3.connect("FNOL_TICKETS.db")
+        cursor = conn.cursor()
+
+        # Fetch the latest FNOL ticket for this phone number
+        cursor.execute("""
+            SELECT RSA_included, ticket_id
+            FROM fnol_details
+            WHERE phone_number = ?
+            ORDER BY ticket_date_time DESC
+            LIMIT 1
+        """, (phone_number,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row is None:
+            return {"error": "No FNOL entry found for this phone number"}, 404
+
+        rsa_included, ticket_id = row
+
+        if rsa_included.lower() in ['yes', 'true', '1']:
+            return {
+                "rsa_included": True,
+                "ticket_id": ticket_id,
+                "services": ["towing", "cab", "fuel delivery"]  # hardcoded or modify as needed
+            }
+        else:
+            return {
+                "rsa_included": False,
+                "ticket_id": ticket_id,
+                "services": []
+            }
+
+    except Exception as e:
+        return {"error": "Failed to fetch RSA details", "details": str(e)}, 500
+
 
 
 @app.post("/api/raise_ticket")
@@ -64,32 +93,22 @@ def create_ftp_directory(ticket_id):
 
     return f"ftp://your-ftp-server.com/fnol_uploads/{ticket_id}/"
 
+# Define the request schema using Pydantic
+class FNOLPayload(BaseModel):
+    phone_number: str
+    policy_number: str
+    location: str
+    accident_date_time: str
 
 # API Endpoint to create an FNOL entry
-@app.post("/create_fnol/",)
-def create_fnol_entry():
+@app.post("/create_fnol_ticket_tool/")
+def create_fnol_entry(data: FNOLPayload):
     try:
-        data = request.get_json()
-        print("📥 Incoming FNOL data:", data)
+        print("📥 Incoming FNOL data:", data.dict())
 
-        # Defensive field extraction
-        try:
-            phone_number = data["phone_number"]
-            policy_number = data["policy_number"]
-            location = data["location"]
-            accident_date_time = data["accident_date_time"]
-        except KeyError as e:
-            missing = str(e).strip("'")
-            print(f"❌ Missing required field: {missing}")
-            return {"error": f"Missing required field: {missing}"}, 400
-
-        # Generate ticket ID and other details
         ticket_id = str(uuid4())
-        # ftp_link = create_ftp_directory(ticket_id)
-        # report_link = None
         ticket_date_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Insert into database
         try:
             conn = sqlite3.connect("FNOL_TICKETS.db")
             cursor = conn.cursor()
@@ -100,10 +119,10 @@ def create_fnol_entry():
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
                     ticket_id,
-                    phone_number,
-                    policy_number,
-                    location,
-                    accident_date_time,
+                    data.phone_number,
+                    data.policy_number,
+                    data.location,
+                    data.accident_date_time,
                     ticket_date_time,
                 ),
             )
@@ -111,20 +130,19 @@ def create_fnol_entry():
         except Exception as db_err:
             conn.rollback()
             print("❌ Database insert failed:", str(db_err))
-            return {"error": "Database insert failed", "details": str(db_err)}, 500
+            raise HTTPException(status_code=500, detail=f"Database insert failed: {str(db_err)}")
         finally:
             conn.close()
 
-        # Success response
         print("✅ FNOL entry successfully created:", ticket_id)
         upload_link = f"http://localhost:8501/image_summary_flow?ticket_id={ticket_id}"
         return {
             "message": "FNOL Entry Created",
             "ticket_id": ticket_id,
-            "phone_number": phone_number,
-            "policy_number": policy_number,
-            "location": location,
-            "accident_date_time": accident_date_time,
+            "phone_number": data.phone_number,
+            "policy_number": data.policy_number,
+            "location": data.location,
+            "accident_date_time": data.accident_date_time,
             "ticket_date_time": ticket_date_time,
             "upload_link": upload_link
         }
@@ -133,8 +151,4 @@ def create_fnol_entry():
         import traceback
         err = traceback.format_exc()
         print("❌ Error in create_fnol_entry:", err)
-        print("❌ Unexpected error:", str(e))
-        return {"error": "Internal Server Error", "details": str(e)}, 500
-
-if __name__ == "__main__":
-    app.run()
+        raise HTTPException(status_code=500, detail=str(e))
