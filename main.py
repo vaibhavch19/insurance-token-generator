@@ -1,21 +1,5 @@
 from typing import List, Dict, Optional, Annotated
 from typing_extensions import TypedDict
-from fastapi import FastAPI
-from fastapi import Request
-app = FastAPI()
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    print(f"\n[REQUEST] {request.method} {request.url}")
-    print(f"Headers: {dict(request.headers)}")
-    try:
-        body = await request.json()
-        print(f"Body: {body}")
-    except:
-        pass
-    
-    response = await call_next(request)
-    return response
-##############################
 from typing import Dict, List, Optional, Annotated
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, START, END
@@ -32,7 +16,21 @@ import json
 from dotenv import load_dotenv
 from datetime import datetime
 from summarizer import summarize_insurance_by_phone
-
+from fastapi import FastAPI
+from fastapi import Request
+app = FastAPI()
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    print(f"\n[REQUEST] {request.method} {request.url}")
+    print(f"Headers: {dict(request.headers)}")
+    try:
+        body = await request.json()
+        print(f"Body: {body}")
+    except:
+        pass
+    
+    response = await call_next(request)
+    return response
 load_dotenv()
 
 API_URL = 'http://127.0.0.1:5050/api'
@@ -114,29 +112,16 @@ def fetch_RSA_details(policy_number: str) -> Dict:
     return {"rsa_details": rsa_details}
 
 
-@tool
-def collect_accident_details(date_time: str, location: str, description: str) -> dict:
-    """
-    Extract accident details to proceed with claim creation.
-    """
-    return {
-        "accident_date_time": date_time,
-        "location": location,
-        "accident_description": description,
-    }
-
-@tool
-def create_fnol(
-    ticket_id: str, ftp_link: str, report_link: str, ticket_date_time: str
-) -> Dict:
-    """Fetch user summary of accident with pictures or videos on the FTP link"""
-    return {
-        "ticket_id": ticket_id,
-        "ftp_link": ftp_link,
-        "report_link": report_link,
-        "ticket_date_time": True,
-        "accident_summary": True,
-    }
+# @tool
+# def collect_accident_details(date_time: str, location: str, description: str) -> dict:
+#     """
+#     Extract accident details to proceed with claim creation.
+#     """
+#     return {
+#         "accident_date_time": date_time,
+#         "location": location,
+#         "accident_description": description,
+#     }
 
 @tool
 def raise_ticket(state: State) -> Dict:
@@ -183,7 +168,8 @@ def raise_ticket(state: State) -> Dict:
     return result
 
 # Actual function to create the FNOL ticket with headers
-def create_fnol_ticket_raw(
+@tool
+def create_fnol_ticket_tool(
     phone_number: str,
     policy_number: str,
     location: str,
@@ -223,16 +209,14 @@ def create_fnol_ticket_raw(
     except Exception as e:
         return {"error": str(e), "ticket_created": False}
 
-# Register the tool with LangChain
-create_fnol_ticket_tool = Tool(
-    name="create_fnol_ticket_tool",
-    func=create_fnol_ticket_raw,
-    description="Create FNOL ticket using phone number, policy number, accident location, and accident date-time."
-)
 
 # Add to tools list
-tools = [get_policy_summary, fetch_RSA_details, raise_ticket, create_fnol_ticket_tool]
-
+tools = [
+    get_policy_summary, 
+    fetch_RSA_details, 
+    raise_ticket, 
+    create_fnol_ticket_tool  # Make sure this is properly registered
+]
 llm_with_tools = llm.bind_tools(tools)
 import re
 
@@ -409,7 +393,22 @@ def agent_node(state: State) -> Dict:
             "updates": {
                 "confirmed_policy": True
             }
-        }   
+        }
+    # In your agent_node function, add this after handling get_policy_summary:
+    if "get_policy_summary" in state:
+        policy_result = state["get_policy_summary"]
+        if isinstance(policy_result, dict):
+            return {
+                "messages": [
+                    AIMessage(content=f"Here are your policy details:\n\n{policy_result.get('message')}")
+                ],
+                "state": {
+                    **state,
+                    "policy_number": policy_result.get("policy_number"),
+                    "rsa": policy_result.get("rsa"),
+                    "awaiting_confirmation": True  # Ask user to confirm
+                }
+            }       
     if state.get("Road side Assistance") is True and not state.get("towing_service"):
         return {
         "messages": [
@@ -537,25 +536,20 @@ def run_conversation():
 
 
 import requests
-
 # ========== GRAPH ==========
 builder = StateGraph(State)
 builder.add_node("agent", agent_node)
 builder.add_node("tools", ToolNode(tools))
 
 builder.add_edge(START, "agent")
-builder.add_conditional_edges("agent", tools_condition)
+builder.add_conditional_edges(
+    "agent",
+    lambda state: "tools" if state.get("tool_calls") else END
+)
 builder.add_edge("tools", "agent")
-builder.add_edge("agent", END)
 
 memory = MemorySaver()
 graph = builder.compile(checkpointer=memory)
-
-
-import logging
-logging.basicConfig(level=logging.DEBUG)
-logging.debug("Your debug message here")
-
 #
 #####################################
 #FRONTEND
